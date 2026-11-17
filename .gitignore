@@ -1,0 +1,30 @@
+# Python Cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+
+# Heavy ML Checkpoints & Large Model Weights (> 100MB)
+results/
+*.pt
+*.pth
+*.safetensors
+text_model_results/
+url_results/
+
+# Temporary / Scratch Files
+test_output.json
+*.log
+pptx_extracted.txt
+
+# Virtual Environments
+env/
+venv/
+.venv/
+ENV/
+
+# OS / Editor Files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
