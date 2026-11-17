@@ -136,16 +136,61 @@ function setBackendMode(mode) {
   });
 }
 
-function syncBackendStatus() {
+async function syncBackendStatus() {
+  const stored = await chrome.storage.local.get([STORAGE_MODE_KEY, STORAGE_BACKEND_KEY]);
+  const mode = stored[STORAGE_MODE_KEY] || 'auto';
+  highlightModePill(mode);
+
+  const targetUrl = (mode === 'local') ? DEFAULT_LOCAL : DEFAULT_CLOUD;
+  const isCloud = (mode !== 'local');
+
+  setChipState('busy', isCloud ? 'Connecting...' : 'Checking...');
+
+  // 1. Direct probe from popup for instant UI responsiveness
+  try {
+    const probeTimeout = isCloud ? 8000 : 1000;
+    const res = await fetch(`${targetUrl}/health`, { signal: AbortSignal.timeout(probeTimeout) });
+    if (res.ok) {
+      const data = await res.json();
+      const backendInfo = {
+        mode: mode,
+        active: isCloud ? 'cloud' : 'local',
+        url: targetUrl,
+        online: true,
+        version: data.version || '3.0'
+      };
+      await chrome.storage.local.set({ [STORAGE_BACKEND_KEY]: backendInfo });
+      updateBackendDisplay(backendInfo);
+      return;
+    }
+  } catch (err) {
+    // If auto mode and local failed, probe cloud
+    if (mode === 'auto') {
+      try {
+        const cloudRes = await fetch(`${DEFAULT_CLOUD}/health`, { signal: AbortSignal.timeout(8000) });
+        if (cloudRes.ok) {
+          const cloudData = await cloudRes.json();
+          const backendInfo = {
+            mode: 'auto',
+            active: 'cloud',
+            url: DEFAULT_CLOUD,
+            online: true,
+            version: cloudData.version || '3.0'
+          };
+          await chrome.storage.local.set({ [STORAGE_BACKEND_KEY]: backendInfo });
+          updateBackendDisplay(backendInfo);
+          return;
+        }
+      } catch (cloudErr) {}
+    }
+  }
+
+  // 2. Fallback to background query if direct probe had issues
   chrome.runtime.sendMessage({ action: 'getBackendStatus' }, (backend) => {
     if (backend) {
       updateBackendDisplay(backend);
     } else {
-      chrome.storage.local.get([STORAGE_MODE_KEY, STORAGE_BACKEND_KEY], (res) => {
-        const mode = res[STORAGE_MODE_KEY] || 'auto';
-        const info = res[STORAGE_BACKEND_KEY] || { mode, active: 'local', online: false };
-        updateBackendDisplay(info);
-      });
+      updateBackendDisplay({ mode, active: isCloud ? 'cloud' : 'local', online: false });
     }
   });
 }
@@ -272,28 +317,46 @@ async function runSimulation(type) {
   if (urlEl) urlEl.textContent = url.substring(0, 55) + (url.length > 55 ? '...' : '');
 
   // Get active backend URL dynamically
-  const stored = await chrome.storage.local.get([STORAGE_BACKEND_KEY]);
-  const backend = stored[STORAGE_BACKEND_KEY] || { active: 'local', url: DEFAULT_LOCAL };
-  const targetApi = `${backend.url || DEFAULT_LOCAL}/analyze`;
+  const stored = await chrome.storage.local.get([STORAGE_MODE_KEY, STORAGE_BACKEND_KEY]);
+  const mode = stored[STORAGE_MODE_KEY] || 'auto';
+  let targetUrl = (mode === 'local') ? DEFAULT_LOCAL : DEFAULT_CLOUD;
 
-  updateBackendTag(backend.active || 'local');
+  updateBackendTag(mode === 'local' ? 'local' : 'cloud');
 
-  fetch(targetApi, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url: url, text: text })
-  })
-    .then(r => r.json())
-    .then(data => {
-      setStatus('online', 'Protected');
-      data._backend = backend;
-      renderAnalysis(data);
-    })
-    .catch(err => {
-      console.error('Simulation error:', err.message || err);
-      setStatus('offline', 'Offline');
-      renderOffline(err.message || String(err));
+  try {
+    const res = await fetch(`${targetUrl}/analyze`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: url, text: text }),
+      signal: AbortSignal.timeout(20000)
     });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    setStatus('online', 'Protected');
+    data._backend = { mode, active: mode === 'local' ? 'local' : 'cloud', url: targetUrl };
+    renderAnalysis(data);
+  } catch (err) {
+    if (mode === 'auto' && targetUrl === DEFAULT_LOCAL) {
+      try {
+        const cloudRes = await fetch(`${DEFAULT_CLOUD}/analyze`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: url, text: text }),
+          signal: AbortSignal.timeout(20000)
+        });
+        if (!cloudRes.ok) throw new Error(`HTTP ${cloudRes.status}`);
+        const cloudData = await cloudRes.json();
+        setStatus('online', 'Protected');
+        cloudData._backend = { mode: 'auto', active: 'cloud', url: DEFAULT_CLOUD };
+        updateBackendTag('cloud');
+        renderAnalysis(cloudData);
+        return;
+      } catch (cloudErr) {}
+    }
+    console.error('Simulation error:', err.message || err);
+    setStatus('offline', 'Offline');
+    renderOffline(err.message || String(err));
+  }
 }
 
 // ── MAIN RENDER ───────────────────────────────────────────

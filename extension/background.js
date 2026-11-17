@@ -22,7 +22,7 @@ async function getEndpoints() {
   };
 }
 
-async function pingHealth(baseUrl, timeoutMs = 1200) {
+async function pingHealth(baseUrl, timeoutMs = 8000) {
   try {
     const res = await fetch(`${baseUrl}/health`, { signal: AbortSignal.timeout(timeoutMs) });
     if (res.ok) {
@@ -55,7 +55,7 @@ async function resolveActiveBackend(forceMode = null) {
   } else if (mode === 'cloud') {
     activeTarget = 'cloud';
     targetUrl = endpoints.cloud;
-    const health = await pingHealth(targetUrl, 4500);
+    const health = await pingHealth(targetUrl, 12000);
     isOnline = health.online;
   } else {
     // 'auto' mode: Prioritize ultra-fast local backend; fall back to cloud if offline
@@ -67,7 +67,7 @@ async function resolveActiveBackend(forceMode = null) {
     } else {
       activeTarget = 'cloud';
       targetUrl = endpoints.cloud;
-      const cloudHealth = await pingHealth(endpoints.cloud, 4000);
+      const cloudHealth = await pingHealth(endpoints.cloud, 12000);
       isOnline = cloudHealth.online;
     }
   }
