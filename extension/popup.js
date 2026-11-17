@@ -12,7 +12,7 @@ const STORAGE_BACKEND_KEY = 'phishguard_active_backend';
 const MAX_HISTORY         = 50;
 
 const DEFAULT_LOCAL = 'http://127.0.0.1:5000';
-const DEFAULT_CLOUD = 'https://phishguard-ai-r5wa.onrender.com';
+const DEFAULT_CLOUD = 'https://phishguard-ai-j381.onrender.com';
 
 const TIER = {
   safe: { color: '#10B981', glow: 'rgba(16,185,129,0.25)', icon: '🟢', label: 'SAFE', action: 'This website appears safe. No significant threats detected.' },

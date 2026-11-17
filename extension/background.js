@@ -4,7 +4,7 @@
 'use strict';
 
 const DEFAULT_LOCAL_URL = 'http://127.0.0.1:5000';
-const DEFAULT_CLOUD_URL = 'https://phishguard-ai-r5wa.onrender.com';
+const DEFAULT_CLOUD_URL = 'https://phishguard-ai-j381.onrender.com';
 
 const STORAGE_KEY_MODE           = 'phishguard_server_mode';        // 'auto' | 'local' | 'cloud'
 const STORAGE_KEY_CUSTOM_CLOUD   = 'phishguard_custom_cloud_url';
