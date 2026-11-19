@@ -6,6 +6,7 @@ __pycache__/
 
 # Heavy ML Checkpoints & Large Model Weights (> 100MB)
 results/
+capstone_etc/
 *.pt
 *.pth
 *.safetensors

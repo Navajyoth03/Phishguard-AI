@@ -147,12 +147,70 @@ async function analyzeTab(tabId, tab) {
             } catch (canvasErr) {}
           }
 
+          // Visual & DOM Forensics
+          const currentHost = window.location.hostname.toLowerCase();
+          const imgs = Array.from(document.querySelectorAll('img'));
+          let extImgCount = 0;
+          let hasLogoMatch = false;
+          const brandKeywords = ['paypal', 'google', 'amazon', 'microsoft', 'apple', 'netflix', 'sbi', 'hdfc', 'icici', 'paytm', 'login', 'signin', 'secure', 'verify'];
+
+          imgs.forEach(img => {
+            const src = (img.src || '').toLowerCase();
+            const alt = (img.alt || '').toLowerCase();
+            const cls = (img.className || '').toLowerCase();
+            if (src.startsWith('http') && !src.includes(currentHost)) {
+              extImgCount++;
+            }
+            if (brandKeywords.some(bk => src.includes(bk) || alt.includes(bk) || cls.includes(bk))) {
+              hasLogoMatch = true;
+            }
+          });
+          const extImgRatio = imgs.length > 0 ? (extImgCount / imgs.length) : 0.0;
+
+          const faviconEl = document.querySelector('link[rel*="icon"]');
+          const faviconUrl = faviconEl ? (faviconEl.href || '') : '';
+          const faviconIsExternal = faviconUrl.startsWith('http') && !faviconUrl.toLowerCase().includes(currentHost);
+
+          const hiddenCount = document.querySelectorAll('[style*="display: none"], [style*="display:none"], [hidden], [style*="visibility: hidden"]').length;
+          const iframeCount = document.querySelectorAll('iframe').length;
+          const inputCount = document.querySelectorAll('input').length;
+          const hasLoginForm = document.querySelectorAll('form input[type="password"], form input[type="email"], form input[type="text"]').length >= 2;
+
+          let hasFixedOverlay = false;
+          try {
+            hasFixedOverlay = Array.from(document.querySelectorAll('div, section, modal, dialog')).some(el => {
+              const style = window.getComputedStyle(el);
+              return (style.position === 'fixed' || style.position === 'absolute') && parseInt(style.zIndex || '0') >= 100;
+            });
+          } catch (_) {}
+
+          // Audio & Vishing Forensics
+          const audioEls = Array.from(document.querySelectorAll('audio'));
+          const hasAudio = audioEls.length > 0;
+          const hasAutoplayAudio = audioEls.some(a => a.autoplay || a.loop);
+          const audioSrcs = audioEls.map(a => (a.src || '').toLowerCase());
+          const hasAlarmAudio = audioSrcs.some(src => /alarm|siren|alert|warning|beep|emergency|police|critical/.test(src));
+          const hasTtsAudio = audioSrcs.some(src => /tts|speech|voice|synthesiz|say/.test(src));
+          const hasWebAudio = typeof window.AudioContext !== 'undefined' || typeof window.webkitAudioContext !== 'undefined';
+
           let features = {
             has_video: hasVideo,
             frames_captured: frames.length,
-            has_audio: document.querySelectorAll('audio').length > 0,
-            num_images: document.querySelectorAll('img').length,
-            has_password: document.querySelectorAll('input[type="password"]').length > 0
+            has_audio: hasAudio,
+            has_autoplay_audio: hasAutoplayAudio,
+            has_alarm_audio: hasAlarmAudio,
+            has_tts_audio: hasTtsAudio,
+            has_web_audio: hasWebAudio,
+            num_images: imgs.length,
+            ext_img_ratio: extImgRatio,
+            has_password: document.querySelectorAll('input[type="password"]').length > 0,
+            has_login_form: hasLoginForm,
+            has_logo_match: hasLogoMatch,
+            favicon_is_external: faviconIsExternal,
+            hidden_count: hiddenCount,
+            iframe_count: iframeCount,
+            input_count: inputCount,
+            has_fixed_overlay: hasFixedOverlay
           };
           return { text: textContent, features: features, frames: frames };
         } catch { return { text: '', features: {}, frames: [] }; }
