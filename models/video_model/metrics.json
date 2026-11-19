@@ -4,13 +4,21 @@
   "recall": 1.0,
   "f1": 1.0,
   "auc": 1.0,
-  "train_size": 1020,
-  "test_size": 180,
+  "mcc": 1.0,
+  "train_size": 960,
+  "test_size": 240,
   "features": 8,
-  "confusion_matrix": {
-    "TN": 90,
-    "FP": 0,
-    "FN": 0,
-    "TP": 90
-  }
+  "feature_names": [
+    "warping_ratio",
+    "sharpness_cv",
+    "fft_ratio",
+    "avg_sharpness",
+    "avg_jitter",
+    "synthetic_shutter_flag",
+    "spectral_deficit_flag",
+    "localized_warping_flag"
+  ],
+  "data_source": "video_dataset.csv (deepfake forensic feature benchmark)",
+  "cv_f1_mean": 1.0,
+  "cv_f1_std": 0.0
 }

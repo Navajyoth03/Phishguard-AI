@@ -1,37 +1,37 @@
 {
-  "training_timestamp": "2026-11-19 22:01:00",
+  "training_timestamp": "2026-11-19 22:58:12",
+  "data_mode": "real_world_benchmarks",
   "models": {
     "url": {
-      "accuracy": 0.9706666666666667,
-      "precision": 0.9882434301521439,
-      "recall": 0.9526666666666667,
-      "f1": 0.9701289884589274,
-      "auc": 0.9933328888888888,
-      "train_size": 17000,
-      "test_size": 3000,
+      "accuracy": 0.8265,
+      "precision": 0.8256,
+      "recall": 0.8277,
+      "f1": 0.8267,
+      "auc": 0.9151,
+      "mcc": 0.6529,
+      "train_size": 80000,
+      "test_size": 20000,
       "features": 63,
-      "confusion_matrix": {
-        "TN": 1483,
-        "FP": 17,
-        "FN": 71,
-        "TP": 1429
-      }
+      "selected_features": 50,
+      "pca_dims": 50,
+      "pca_explained_variance": 1.0,
+      "data_source": "malicious_phish.csv + phishing_site_urls.csv + verified_online.csv (real-world)",
+      "cv_f1_mean": 0.761,
+      "cv_f1_std": 0.0033
     },
     "text": {
-      "accuracy": 0.9652951699463327,
-      "precision": 0.9377738825591586,
-      "recall": 0.9762773722627737,
-      "f1": 0.9566383549396513,
-      "auc": 0.9953987532382723,
-      "train_size": 15836,
-      "test_size": 2795,
-      "vocab_size": 10000,
-      "confusion_matrix": {
-        "TN": 1628,
-        "FP": 71,
-        "FN": 26,
-        "TP": 1070
-      }
+      "accuracy": 0.9848,
+      "precision": 0.9745,
+      "recall": 0.9864,
+      "f1": 0.9804,
+      "auc": 0.9986,
+      "mcc": 0.968,
+      "train_size": 14468,
+      "test_size": 3617,
+      "vocab_size": 15000,
+      "data_source": "phishing_emails_kaggle.csv (18.6k real emails \u2014 Enron/Nazario)",
+      "cv_f1_mean": 0.9797,
+      "cv_f1_std": 0.0019
     },
     "visual": {
       "accuracy": 1.0,
@@ -39,15 +39,31 @@
       "recall": 1.0,
       "f1": 1.0,
       "auc": 1.0,
-      "train_size": 4250,
-      "test_size": 750,
+      "mcc": 1.0,
+      "train_size": 4000,
+      "test_size": 1000,
       "features": 16,
-      "confusion_matrix": {
-        "TN": 375,
-        "FP": 0,
-        "FN": 0,
-        "TP": 375
-      }
+      "feature_names": [
+        "ext_img_ratio",
+        "has_password",
+        "brand_visual_impersonation",
+        "favicon_is_external",
+        "has_logo_match",
+        "hidden_elements_ratio",
+        "iframe_ratio",
+        "has_fixed_overlay",
+        "has_login_form",
+        "cred_harvest_cluster",
+        "suspicious_tld_bias",
+        "insecure_http",
+        "visual_density",
+        "input_density",
+        "visual_deception_score",
+        "legit_domain_dampener"
+      ],
+      "data_source": "visual_dataset.csv (DOM/layout feature benchmark)",
+      "cv_f1_mean": 1.0,
+      "cv_f1_std": 0.0
     },
     "audio": {
       "accuracy": 1.0,
@@ -55,15 +71,27 @@
       "recall": 1.0,
       "f1": 1.0,
       "auc": 1.0,
-      "train_size": 3400,
-      "test_size": 600,
+      "mcc": 1.0,
+      "train_size": 3200,
+      "test_size": 800,
       "features": 12,
-      "confusion_matrix": {
-        "TN": 300,
-        "FP": 0,
-        "FN": 0,
-        "TP": 300
-      }
+      "feature_names": [
+        "has_audio",
+        "has_autoplay",
+        "has_alarm_audio",
+        "has_tts_audio",
+        "has_web_audio",
+        "urgency_intensity",
+        "vishing_call_prompt",
+        "threat_density",
+        "has_video_with_audio",
+        "suspicious_tld_bias",
+        "compound_tech_support_scam",
+        "legit_dampener"
+      ],
+      "data_source": "audio_dataset.csv (acoustic/vishing feature benchmark)",
+      "cv_f1_mean": 0.9994,
+      "cv_f1_std": 0.0008
     },
     "video": {
       "accuracy": 1.0,
@@ -71,29 +99,33 @@
       "recall": 1.0,
       "f1": 1.0,
       "auc": 1.0,
-      "train_size": 1020,
-      "test_size": 180,
+      "mcc": 1.0,
+      "train_size": 960,
+      "test_size": 240,
       "features": 8,
-      "confusion_matrix": {
-        "TN": 90,
-        "FP": 0,
-        "FN": 0,
-        "TP": 90
-      }
+      "feature_names": [
+        "warping_ratio",
+        "sharpness_cv",
+        "fft_ratio",
+        "avg_sharpness",
+        "avg_jitter",
+        "synthetic_shutter_flag",
+        "spectral_deficit_flag",
+        "localized_warping_flag"
+      ],
+      "data_source": "video_dataset.csv (deepfake forensic feature benchmark)",
+      "cv_f1_mean": 1.0,
+      "cv_f1_std": 0.0
     },
     "fusion": {
-      "accuracy": 1.0,
-      "precision": 1.0,
-      "recall": 1.0,
-      "f1": 1.0,
-      "auc": 1.0,
-      "scenarios_evaluated": 1000,
-      "confusion_matrix": {
-        "TN": 500,
-        "FP": 0,
-        "FN": 0,
-        "TP": 500
-      }
+      "accuracy": 0.989,
+      "precision": 0.988,
+      "recall": 0.99,
+      "f1": 0.989,
+      "auc": 0.998,
+      "mcc": 0.978,
+      "architecture": "Cross-Attention Multimodal Late Fusion (5 modalities -> 320D -> Risk)",
+      "scenarios_evaluated": 1000
     }
   }
 }

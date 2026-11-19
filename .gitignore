@@ -13,12 +13,6 @@ capstone_etc/
 text_model_results/
 url_results/
 
-# Large Raw Datasets (> 5MB)
-datasets/malicious_phish.csv
-datasets/phishing_emails_kaggle.csv
-datasets/phishing_site_urls.csv
-datasets/verified_online.csv
-
 # Temporary / Scratch Files
 test_output.json
 *.log
@@ -29,6 +23,12 @@ env/
 venv/
 .venv/
 ENV/
+
+# Large Raw Datasets (> 5MB)
+datasets/malicious_phish.csv
+datasets/phishing_emails_kaggle.csv
+datasets/phishing_site_urls.csv
+datasets/verified_online.csv
 
 # OS / Editor Files
 .DS_Store

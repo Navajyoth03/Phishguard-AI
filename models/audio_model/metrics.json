@@ -4,13 +4,25 @@
   "recall": 1.0,
   "f1": 1.0,
   "auc": 1.0,
-  "train_size": 3400,
-  "test_size": 600,
+  "mcc": 1.0,
+  "train_size": 3200,
+  "test_size": 800,
   "features": 12,
-  "confusion_matrix": {
-    "TN": 300,
-    "FP": 0,
-    "FN": 0,
-    "TP": 300
-  }
+  "feature_names": [
+    "has_audio",
+    "has_autoplay",
+    "has_alarm_audio",
+    "has_tts_audio",
+    "has_web_audio",
+    "urgency_intensity",
+    "vishing_call_prompt",
+    "threat_density",
+    "has_video_with_audio",
+    "suspicious_tld_bias",
+    "compound_tech_support_scam",
+    "legit_dampener"
+  ],
+  "data_source": "audio_dataset.csv (acoustic/vishing feature benchmark)",
+  "cv_f1_mean": 0.9994,
+  "cv_f1_std": 0.0008
 }

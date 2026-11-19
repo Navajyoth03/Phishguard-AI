@@ -1,0 +1,32 @@
+{
+  "accuracy": 1.0,
+  "precision": 1.0,
+  "recall": 1.0,
+  "f1": 1.0,
+  "auc": 1.0,
+  "mcc": 1.0,
+  "train_size": 4000,
+  "test_size": 1000,
+  "features": 16,
+  "feature_names": [
+    "ext_img_ratio",
+    "has_password",
+    "brand_visual_impersonation",
+    "favicon_is_external",
+    "has_logo_match",
+    "hidden_elements_ratio",
+    "iframe_ratio",
+    "has_fixed_overlay",
+    "has_login_form",
+    "cred_harvest_cluster",
+    "suspicious_tld_bias",
+    "insecure_http",
+    "visual_density",
+    "input_density",
+    "visual_deception_score",
+    "legit_domain_dampener"
+  ],
+  "data_source": "visual_dataset.csv (DOM/layout feature benchmark)",
+  "cv_f1_mean": 1.0,
+  "cv_f1_std": 0.0
+}
