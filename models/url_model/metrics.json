@@ -1,11 +1,11 @@
 {
-  "accuracy": 0.9872592592592593,
-  "precision": 0.9906266738082485,
-  "recall": 0.9864,
-  "f1": 0.9885088188134687,
+  "accuracy": 0.9831111111111112,
+  "precision": 0.9844028520499108,
+  "recall": 0.9817777777777777,
+  "f1": 0.9830885625278148,
   "auc": 1.0,
-  "train_size": 38250,
-  "test_size": 6750,
-  "features": 57,
-  "pca_dims": 45
+  "train_size": 25500,
+  "test_size": 4500,
+  "features": 63,
+  "pca_dims": 50
 }

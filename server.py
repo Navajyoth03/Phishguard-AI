@@ -159,6 +159,41 @@ BRAND_NAMES = {
 SHORTENERS = {'bit.ly','tinyurl','goo.gl','ow.ly','cutt.ly','rb.gy','t.co','tiny.cc'}
 SUSP_PARAMS = {'redirect','url','return','next','dest','goto','callback','ref'}
 
+HOMOGLYPH_TABLE = str.maketrans({
+    '0': 'o', '1': 'l', '3': 'e', '4': 'a', '5': 's', '8': 'b',
+    '@': 'a', '$': 's', '!': 'i',
+    'а': 'a', 'е': 'e', 'о': 'o', 'р': 'p', 'с': 'c', 'у': 'y', 'х': 'x', 'і': 'i', 'ј': 'j'
+})
+
+def normalize_homoglyphs(text: str) -> str:
+    s = text.lower().replace('rn', 'm').replace('vv', 'w').replace('cl', 'd')
+    return s.translate(HOMOGLYPH_TABLE)
+
+def levenshtein_dist(s1: str, s2: str) -> int:
+    if len(s1) < len(s2):
+        return levenshtein_dist(s2, s1)
+    if len(s2) == 0:
+        return len(s1)
+    prev = range(len(s2) + 1)
+    for i, c1 in enumerate(s1):
+        curr = [i + 1]
+        for j, c2 in enumerate(s2):
+            curr.append(min(prev[j + 1] + 1, curr[j] + 1, prev[j] + (c1 != c2)))
+        prev = curr
+    return prev[-1]
+
+DECEPTIVE_TRIGRAMS = {
+    'tok', 'aut', 'uth', 'ver', 'eri', 'rif', 'upd', 'dat', 'sec',
+    'log', 'sso', 'pwd', 'pas', 'pay', 'bil', 'bnk', 'act', 'val',
+    'kyc', 'mfa', 'otp', 'con', 'rec', 'rdr', 'acc'
+}
+
+EPHEMERAL_TLDS = {
+    '.tk', '.ml', '.ga', '.cf', '.xyz', '.top', '.click', '.buzz',
+    '.cfd', '.rest', '.icu', '.site', '.space', '.website', '.club',
+    '.online', '.live', '.loan', '.win', '.bid'
+}
+
 PHISHING_TEXT_KW = [
     'urgent','suspended','verify your account','click here','act now',
     'limited time','winner','lottery','prize','free gift','congratulations',
@@ -257,6 +292,61 @@ def _extract_url_features(url: str) -> dict:
             run = run+1 if url[i] == url[i-1] else 1
             mr  = max(mr, run)
         f['max_repeat']         = min(mr / 10.0, 1.0)
+
+        # 58-60: Typosquatting & Homoglyphs (Levenshtein distance)
+        domain_candidate = parts[-2] if len(parts) >= 2 else host
+        norm_domain = normalize_homoglyphs(domain_candidate)
+        subdomain_str = '.'.join(parts[:-2]) if len(parts) > 2 else ''
+        norm_subdomain = normalize_homoglyphs(subdomain_str)
+
+        is_typosquat = 0
+        min_lev = 99
+        has_homo = 1 if (norm_domain != domain_candidate or norm_subdomain != subdomain_str) else 0
+
+        domain_tokens = [t for t in re.split(r'[-_.]', domain_candidate) if len(t) >= 3]
+        if '-' in domain_candidate and len(domain_candidate) >= 3:
+            domain_tokens.append(domain_candidate)
+
+        for tok in domain_tokens:
+            norm_tok = normalize_homoglyphs(tok)
+            for b in BRAND_NAMES:
+                if tok == b:
+                    continue  # Exact match handled by brand_host_imperson
+                if norm_tok == b:
+                    is_typosquat = 1
+                    has_homo = 1
+                    min_lev = 0
+                    break
+                if abs(len(tok) - len(b)) <= 2:
+                    d = levenshtein_dist(tok, b)
+                    if d < min_lev:
+                        min_lev = d
+                    if d == 1 or (d == 2 and len(b) >= 6):
+                        is_typosquat = 1
+                        break
+            if is_typosquat:
+                break
+
+        f['is_typosquat']       = is_typosquat
+        f['min_brand_lev_dist'] = min(min_lev / 10.0, 1.0) if min_lev < 90 else 1.0
+        f['has_homoglyph']      = has_homo
+
+        # 61-62: Character N-Gram sub-word features
+        subword_hits = sum(1 for tri in DECEPTIVE_TRIGRAMS if tri in url_l)
+        f['subword_phish_density'] = min(subword_hits / max(len(url_l) / 10.0, 1.0), 10.0)
+
+        if len(url_l) >= 3:
+            trigrams = [url_l[i:i+3] for i in range(len(url_l) - 2)]
+            tri_counts = Counter(trigrams)
+            tri_entr = -sum((c / len(trigrams)) * math.log2(c / len(trigrams)) for c in tri_counts.values())
+            f['char_trigram_entropy'] = min(tri_entr / 6.0, 1.0)
+        else:
+            f['char_trigram_entropy'] = 0.0
+
+        # 63: Domain Freshness / Ephemeral Infrastructure Heuristic
+        has_dated_pattern = 1 if re.search(r'-(202[4-9]|\d{2,4})\b', host) else 0
+        has_ephemeral_tld = 1 if suffix in EPHEMERAL_TLDS else 0
+        f['domain_freshness_risk'] = 1 if (has_ephemeral_tld and (has_dated_pattern or f['entropy'] > 4.1 or is_typosquat)) else 0
     except Exception:
         f = {k: 0 for k in models.url_features}
     return f
@@ -299,6 +389,17 @@ def _rule_url(url: str) -> dict:
         for brand in BRAND_NAMES:
             if brand in url_l and brand not in root:
                 risk += 0.30; flags.append(f"Brand impersonation: '{brand}'"); break
+
+        # Typosquatting & Homoglyphs in fallback
+        domain_name = parts[-2] if len(parts) >= 2 else host
+        norm_domain = normalize_homoglyphs(domain_name)
+        for brand in BRAND_NAMES:
+            if brand in root:
+                continue
+            if norm_domain == brand or (abs(len(domain_name) - len(brand)) <= 2 and levenshtein_dist(domain_name, brand) <= 1):
+                risk += 0.42
+                flags.append(f"Typosquatting lookalike target: '{brand}'")
+                break
     except Exception:
         risk = 0.5
     risk = float(np.clip(risk + np.random.uniform(-0.02, 0.02), 0.03, 0.97))
@@ -464,6 +565,10 @@ def analyze_url(url: str) -> dict:
 
             # Derive indicators from features for display
             flags = []
+            if feat.get('is_typosquat'): flags.append("Brand lookalike / typosquatting detected")
+            if feat.get('has_homoglyph'): flags.append("Homoglyph / visual character spoofing")
+            if feat.get('domain_freshness_risk'): flags.append("Ephemeral / disposable infrastructure pattern")
+            if feat.get('subword_phish_density', 0) > 0.4: flags.append("Deceptive sub-word morphemes detected")
             if feat.get('has_ip'): flags.append("IP address used as hostname")
             if not feat.get('has_https'): flags.append("Insecure HTTP connection")
             if feat.get('has_susp_tld'): flags.append("High-risk TLD detected")

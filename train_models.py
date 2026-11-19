@@ -48,8 +48,8 @@ TEXT_MODEL_DIR = os.path.join(MODELS_DIR, 'text_model')
 for d in [MODELS_DIR, URL_MODEL_DIR, TEXT_MODEL_DIR]:
     os.makedirs(d, exist_ok=True)
 
-URL_PHISHING_COUNT    = 25_000
-URL_LEGITIMATE_COUNT  = 20_000
+URL_PHISHING_COUNT    = 15_000
+URL_LEGITIMATE_COUNT  = 15_000
 TEXT_PHISHING_COUNT   = 3_000
 TEXT_LEGIT_COUNT      = 3_000
 EMBEDDING_DIM         = 64
@@ -136,6 +136,15 @@ def _rand_params(n=None):
 def _rand_hex_str(length=24):
     return ''.join(random.choices('0123456789abcdef', k=length))
 
+def _typosquat_variant(brand: str) -> str:
+    typo_maps = {'o': '0', 'l': '1', 'i': '1', 'e': '3', 'a': '4', 'm': 'rn', 'w': 'vv'}
+    chars = list(brand)
+    for idx, c in enumerate(chars):
+        if c in typo_maps and random.random() > 0.4:
+            chars[idx] = typo_maps[c]
+            return ''.join(chars)
+    return brand + random.choice(['k', 's', brand[-1]])
+
 # ─── Phishing URL Generator ───────────────────────────────────────────────────
 def _gen_phishing_url():
     brand  = random.choice(BRAND_NAMES)
@@ -169,7 +178,7 @@ def _gen_phishing_url():
         lambda: f"http://google.com@{_rand_str()}-{word}.{tld}/{brand}",
 
         # 9. Typosquatting: replace letters
-        lambda: f"http://{brand.replace('a','@').replace('o','0').replace('i','1')}-secure.{random.choice(['com','net'])}/{word}",
+        lambda: f"http://{_typosquat_variant(brand)}-{word}.{random.choice(['com','net',tld])}/{word}",
 
         # 10. Brand + country + verify (common in Indian phishing)
         lambda: f"http://{brand}-india-{word}.{tld}/{word}?{_rand_params()}",
@@ -185,6 +194,12 @@ def _gen_phishing_url():
 
         # 14. Very long path with random hex (common in phishing kits)
         lambda: f"http://{_rand_str()}.{tld}/{_rand_hex_str(32)}/{brand}_{word}.php",
+
+        # 15. Ephemeral dated domain (e.g. sbi-kyc-2026.xyz)
+        lambda: f"http://{brand}-{word}-{random.randint(2025,2027)}.{tld}/{word}",
+
+        # 16. Sub-word token concatenation (e.g. auth-sso-gateway-token.com)
+        lambda: f"http://auth-sso-{_rand_str(3,5)}-token.{tld}/login",
     ]
 
     return random.choice(strategies)()
@@ -248,6 +263,41 @@ SHORTENERS = {'bit.ly','tinyurl','goo.gl','ow.ly','cutt.ly','rb.gy','t.co',
               'tiny.cc','is.gd','shorturl','buff.ly','tr.im'}
 
 SUSP_PARAMS = {'redirect','url','return','next','dest','goto','callback','ref'}
+
+HOMOGLYPH_TABLE = str.maketrans({
+    '0': 'o', '1': 'l', '3': 'e', '4': 'a', '5': 's', '8': 'b',
+    '@': 'a', '$': 's', '!': 'i',
+    'а': 'a', 'е': 'e', 'о': 'o', 'р': 'p', 'с': 'c', 'у': 'y', 'х': 'x', 'і': 'i', 'ј': 'j'
+})
+
+def normalize_homoglyphs(text: str) -> str:
+    s = text.lower().replace('rn', 'm').replace('vv', 'w').replace('cl', 'd')
+    return s.translate(HOMOGLYPH_TABLE)
+
+def levenshtein_dist(s1: str, s2: str) -> int:
+    if len(s1) < len(s2):
+        return levenshtein_dist(s2, s1)
+    if len(s2) == 0:
+        return len(s1)
+    prev = range(len(s2) + 1)
+    for i, c1 in enumerate(s1):
+        curr = [i + 1]
+        for j, c2 in enumerate(s2):
+            curr.append(min(prev[j + 1] + 1, curr[j] + 1, prev[j] + (c1 != c2)))
+        prev = curr
+    return prev[-1]
+
+DECEPTIVE_TRIGRAMS = {
+    'tok', 'aut', 'uth', 'ver', 'eri', 'rif', 'upd', 'dat', 'sec',
+    'log', 'sso', 'pwd', 'pas', 'pay', 'bil', 'bnk', 'act', 'val',
+    'kyc', 'mfa', 'otp', 'con', 'rec', 'rdr', 'acc'
+}
+
+EPHEMERAL_TLDS = {
+    '.tk', '.ml', '.ga', '.cf', '.xyz', '.top', '.click', '.buzz',
+    '.cfd', '.rest', '.icu', '.site', '.space', '.website', '.club',
+    '.online', '.live', '.loan', '.win', '.bid'
+}
 
 
 def extract_url_features(url: str) -> dict:
@@ -360,6 +410,61 @@ def extract_url_features(url: str) -> dict:
             max_rep = max(max_rep, run)
         f['max_repeat']        = min(max_rep / 10.0, 1.0)
 
+        # 58-60: Typosquatting & Homoglyphs (Levenshtein distance)
+        domain_candidate = parts[-2] if len(parts) >= 2 else host
+        norm_domain = normalize_homoglyphs(domain_candidate)
+        subdomain_str = '.'.join(parts[:-2]) if len(parts) > 2 else ''
+        norm_subdomain = normalize_homoglyphs(subdomain_str)
+
+        is_typosquat = 0
+        min_lev = 99
+        has_homo = 1 if (norm_domain != domain_candidate or norm_subdomain != subdomain_str) else 0
+
+        domain_tokens = [t for t in re.split(r'[-_.]', domain_candidate) if len(t) >= 3]
+        if '-' in domain_candidate and len(domain_candidate) >= 3:
+            domain_tokens.append(domain_candidate)
+
+        for tok in domain_tokens:
+            norm_tok = normalize_homoglyphs(tok)
+            for b in BRAND_SET:
+                if tok == b:
+                    continue  # Exact match handled by brand_host_imperson
+                if norm_tok == b:
+                    is_typosquat = 1
+                    has_homo = 1
+                    min_lev = 0
+                    break
+                if abs(len(tok) - len(b)) <= 2:
+                    d = levenshtein_dist(tok, b)
+                    if d < min_lev:
+                        min_lev = d
+                    if d == 1 or (d == 2 and len(b) >= 6):
+                        is_typosquat = 1
+                        break
+            if is_typosquat:
+                break
+
+        f['is_typosquat']       = is_typosquat
+        f['min_brand_lev_dist'] = min(min_lev / 10.0, 1.0) if min_lev < 90 else 1.0
+        f['has_homoglyph']      = has_homo
+
+        # 61-62: Character N-Gram sub-word features
+        subword_hits = sum(1 for tri in DECEPTIVE_TRIGRAMS if tri in url_l)
+        f['subword_phish_density'] = min(subword_hits / max(len(url_l) / 10.0, 1.0), 10.0)
+
+        if len(url_l) >= 3:
+            trigrams = [url_l[i:i+3] for i in range(len(url_l) - 2)]
+            tri_counts = Counter(trigrams)
+            tri_entr = -sum((c / len(trigrams)) * math.log2(c / len(trigrams)) for c in tri_counts.values())
+            f['char_trigram_entropy'] = min(tri_entr / 6.0, 1.0)
+        else:
+            f['char_trigram_entropy'] = 0.0
+
+        # 63: Domain Freshness / Ephemeral Infrastructure Heuristic
+        has_dated_pattern = 1 if re.search(r'-(202[4-9]|\d{2,4})\b', host) else 0
+        has_ephemeral_tld = 1 if suffix in EPHEMERAL_TLDS else 0
+        f['domain_freshness_risk'] = 1 if (has_ephemeral_tld and (has_dated_pattern or f['entropy'] > 4.1 or is_typosquat)) else 0
+
     except Exception:
         # If URL can't be parsed, return zeros
         f = {k: 0 for k in [
@@ -375,6 +480,8 @@ def extract_url_features(url: str) -> dict:
             'has_susp_kw_path','brand_in_url','brand_host_imperson','brand_in_path',
             'brand_not_host','path_depth','avg_seg_len','has_long_path','has_php_ext',
             'num_qparams','has_susp_param','entropy','norm_entropy','max_repeat',
+            'is_typosquat','min_brand_lev_dist','has_homoglyph','subword_phish_density',
+            'char_trigram_entropy','domain_freshness_risk'
         ]}
     return f
 
@@ -382,16 +489,16 @@ FEATURE_NAMES = list(extract_url_features("https://google.com").keys())
 
 
 def extract_feature_matrix(urls, verbose=True):
-    rows = []
     n = len(urls)
+    num_feat = len(FEATURE_NAMES)
+    X = np.zeros((n, num_feat), dtype=np.float32)
     for i, u in enumerate(urls):
-        rows.append(extract_url_features(u))
+        feat = extract_url_features(u)
+        for j, k in enumerate(FEATURE_NAMES):
+            X[i, j] = feat.get(k, 0.0)
         if verbose and (i+1) % 5000 == 0:
             print(f"     Feature extraction: {i+1:,}/{n:,} ({(i+1)/n*100:.0f}%)")
-    import pandas as pd
-    df = pd.DataFrame(rows, columns=FEATURE_NAMES)
-    df = df.fillna(0)
-    return df
+    return X
 
 
 # ─── URL Model Trainer ────────────────────────────────────────────────────────
@@ -405,11 +512,10 @@ def train_url_model(urls=None, labels=None):
 
     print(f"\n[2/6] Extracting URL features ({len(urls):,} URLs, {len(FEATURE_NAMES)} features)...")
     t0 = time.time()
-    X_df = extract_feature_matrix(urls, verbose=True)
+    X = extract_feature_matrix(urls, verbose=True)
     print(f"     Done in {time.time()-t0:.1f}s")
 
     y = np.array(labels)
-    X = X_df.values
 
     # Train / test split
     X_train, X_test, y_train, y_test = train_test_split(
@@ -424,8 +530,8 @@ def train_url_model(urls=None, labels=None):
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled  = scaler.transform(X_test)
 
-    # Feature selection (top 45 features)
-    n_select = min(45, X_train_scaled.shape[1])
+    # Feature selection (top 50 features)
+    n_select = min(50, X_train_scaled.shape[1])
     selector = SelectKBest(f_classif, k=n_select)
     X_train_sel = selector.fit_transform(X_train_scaled, y_train)
     X_test_sel  = selector.transform(X_test_scaled)
@@ -440,11 +546,11 @@ def train_url_model(urls=None, labels=None):
 
     # Ensemble
     rf  = RandomForestClassifier(
-        n_estimators=300, max_depth=18, min_samples_split=5,
+        n_estimators=150, max_depth=16, min_samples_split=5,
         class_weight='balanced', n_jobs=-1, random_state=RANDOM_STATE
     )
     gb  = GradientBoostingClassifier(
-        n_estimators=200, learning_rate=0.08, max_depth=6,
+        n_estimators=100, learning_rate=0.1, max_depth=5,
         subsample=0.85, random_state=RANDOM_STATE
     )
     lr  = LogisticRegression(
