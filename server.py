@@ -157,6 +157,9 @@ LEGIT_DOMAINS = {
     "iitb.ac.in","iitd.ac.in","iitm.ac.in","iisc.ac.in","nptel.ac.in",
     "byjus.com","unacademy.com","vedantu.com","timesofindia.indiatimes.com",
     "economictimes.indiatimes.com","hindustantimes.com","livemint.com",
+    # Streaming & Media
+    "hotstar.com","disneyplus.com","jiocinema.com","primevideo.com",
+    "sonyliv.com","zee5.com","vimeo.com","dailymotion.com",
 }
 
 SUSP_TLD_SET = {'.tk','.ml','.ga','.cf','.xyz','.club','.online','.site',
@@ -695,7 +698,11 @@ def analyze_image(url: str, dom_features: dict = None) -> dict:
     logit = float(np.dot(feat_vec, weights) - 2.4)
     risk = 1.0 / (1.0 + np.exp(-np.clip(logit, -10.0, 10.0)))
     if is_legit:
-        risk = min(risk, 0.06)
+        risk = min(risk, 0.04)
+    elif not has_pwd and not brand_visual and not has_login_form:
+        # Benign web media/advertising guardrail: Without password harvesting or brand impersonation,
+        # external images and video overlays are legitimate advertising or streaming players
+        risk = min(risk, 0.08)
     risk = float(np.clip(risk, 0.02, 0.98))
 
     emb = np.dot(feat_vec, W_IMG)
@@ -706,11 +713,11 @@ def analyze_image(url: str, dom_features: dict = None) -> dict:
         flags.append(f"Visual brand impersonation: '{impersonated_brand.upper()}' UI on non-official domain")
     if cred_harvest_cluster:
         flags.append("Visual credential harvesting: Password input alongside brand assets")
-    if favicon_ext:
+    if favicon_ext and (has_pwd or brand_visual):
         flags.append("Favicon origin mismatch: Stealing brand icon from foreign host")
-    if fixed_overlay:
+    if fixed_overlay and (has_pwd or brand_visual):
         flags.append("Deceptive full-screen modal or overlay dialog detected")
-    if ext_ratio > 0.5:
+    if ext_ratio > 0.5 and (has_pwd or brand_visual):
         flags.append(f"External asset dependency: {int(ext_ratio*100)}% images loaded from remote origins")
     if insecure_http and has_pwd:
         flags.append("Insecure HTTP credential submission form")
