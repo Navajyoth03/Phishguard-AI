@@ -1,12 +1,12 @@
 {
-  "accuracy": 1.0,
-  "precision": 1.0,
-  "recall": 1.0,
-  "f1": 1.0,
-  "auc": 1.0,
-  "mcc": 1.0,
-  "train_size": 960,
-  "test_size": 240,
+  "accuracy": 0.94,
+  "precision": 0.9536,
+  "recall": 0.925,
+  "f1": 0.9391,
+  "auc": 0.9847,
+  "mcc": 0.8804,
+  "train_size": 1600,
+  "test_size": 400,
   "features": 8,
   "feature_names": [
     "warping_ratio",
@@ -19,6 +19,6 @@
     "localized_warping_flag"
   ],
   "data_source": "video_dataset.csv (deepfake forensic feature benchmark)",
-  "cv_f1_mean": 1.0,
-  "cv_f1_std": 0.0
+  "cv_f1_mean": 0.9542,
+  "cv_f1_std": 0.0149
 }

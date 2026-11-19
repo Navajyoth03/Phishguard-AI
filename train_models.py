@@ -785,7 +785,7 @@ def load_visual_dataset():
                     feat.append(0.0)
             features.append(feat)
             try:
-                labels.append(int(row.get('label', 0)))
+                labels.append(int(float(row.get('label', 0))))
             except (ValueError, TypeError):
                 labels.append(0)
 
@@ -958,7 +958,7 @@ def load_audio_dataset():
                     feat.append(0.0)
             features.append(feat)
             try:
-                labels.append(int(row.get('label', 0)))
+                labels.append(int(float(row.get('label', 0))))
             except (ValueError, TypeError):
                 labels.append(0)
 
@@ -1121,7 +1121,7 @@ def load_video_dataset():
                     feat.append(0.0)
             features.append(feat)
             try:
-                labels.append(int(row.get('label', 0)))
+                labels.append(int(float(row.get('label', 0))))
             except (ValueError, TypeError):
                 labels.append(0)
 

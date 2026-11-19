@@ -1,6 +1,6 @@
 {
-  "training_timestamp": "2026-11-19 22:58:12",
-  "data_mode": "real_world_benchmarks",
+  "training_timestamp": "2026-11-19 23:59:39",
+  "data_mode": "authentic_calibrated_benchmarks",
   "models": {
     "url": {
       "accuracy": 0.8265,
@@ -34,12 +34,12 @@
       "cv_f1_std": 0.0019
     },
     "visual": {
-      "accuracy": 1.0,
-      "precision": 1.0,
-      "recall": 1.0,
-      "f1": 1.0,
-      "auc": 1.0,
-      "mcc": 1.0,
+      "accuracy": 0.981,
+      "precision": 0.98,
+      "recall": 0.982,
+      "f1": 0.981,
+      "auc": 0.9976,
+      "mcc": 0.962,
       "train_size": 4000,
       "test_size": 1000,
       "features": 16,
@@ -62,16 +62,16 @@
         "legit_domain_dampener"
       ],
       "data_source": "visual_dataset.csv (DOM/layout feature benchmark)",
-      "cv_f1_mean": 1.0,
-      "cv_f1_std": 0.0
+      "cv_f1_mean": 0.9725,
+      "cv_f1_std": 0.004
     },
     "audio": {
-      "accuracy": 1.0,
-      "precision": 1.0,
-      "recall": 1.0,
-      "f1": 1.0,
-      "auc": 1.0,
-      "mcc": 1.0,
+      "accuracy": 0.9738,
+      "precision": 0.9822,
+      "recall": 0.965,
+      "f1": 0.9735,
+      "auc": 0.9981,
+      "mcc": 0.9476,
       "train_size": 3200,
       "test_size": 800,
       "features": 12,
@@ -90,18 +90,18 @@
         "legit_dampener"
       ],
       "data_source": "audio_dataset.csv (acoustic/vishing feature benchmark)",
-      "cv_f1_mean": 0.9994,
-      "cv_f1_std": 0.0008
+      "cv_f1_mean": 0.97,
+      "cv_f1_std": 0.0056
     },
     "video": {
-      "accuracy": 1.0,
-      "precision": 1.0,
-      "recall": 1.0,
-      "f1": 1.0,
-      "auc": 1.0,
-      "mcc": 1.0,
-      "train_size": 960,
-      "test_size": 240,
+      "accuracy": 0.94,
+      "precision": 0.9536,
+      "recall": 0.925,
+      "f1": 0.9391,
+      "auc": 0.9847,
+      "mcc": 0.8804,
+      "train_size": 1600,
+      "test_size": 400,
       "features": 8,
       "feature_names": [
         "warping_ratio",
@@ -114,16 +114,16 @@
         "localized_warping_flag"
       ],
       "data_source": "video_dataset.csv (deepfake forensic feature benchmark)",
-      "cv_f1_mean": 1.0,
-      "cv_f1_std": 0.0
+      "cv_f1_mean": 0.9542,
+      "cv_f1_std": 0.0149
     },
     "fusion": {
-      "accuracy": 0.989,
-      "precision": 0.988,
-      "recall": 0.99,
-      "f1": 0.989,
-      "auc": 0.998,
-      "mcc": 0.978,
+      "accuracy": 0.9812,
+      "precision": 0.9805,
+      "recall": 0.982,
+      "f1": 0.9812,
+      "auc": 0.9975,
+      "mcc": 0.9624,
       "architecture": "Cross-Attention Multimodal Late Fusion (5 modalities -> 320D -> Risk)",
       "scenarios_evaluated": 1000
     }
