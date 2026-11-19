@@ -37,6 +37,10 @@ BASE_DIR       = os.path.dirname(os.path.abspath(__file__))
 MODELS_DIR     = os.path.join(BASE_DIR, 'models')
 URL_MODEL_DIR  = os.path.join(MODELS_DIR, 'url_model')
 TEXT_MODEL_DIR = os.path.join(MODELS_DIR, 'text_model')
+VISUAL_MODEL_DIR = os.path.join(MODELS_DIR, 'visual_model')
+AUDIO_MODEL_DIR  = os.path.join(MODELS_DIR, 'audio_model')
+VIDEO_MODEL_DIR  = os.path.join(MODELS_DIR, 'video_model')
+FUSION_MODEL_DIR = os.path.join(MODELS_DIR, 'fusion_model')
 
 # In-memory history (last 100)
 _history: deque = deque(maxlen=100)
@@ -83,11 +87,29 @@ class ModelManager:
         self.text_trained     = False
         self.text_projection  = None
 
+        self.visual_model     = None
+        self.visual_scaler    = None
+        self.visual_metrics   = {}
+        self.visual_trained   = False
+
+        self.audio_model      = None
+        self.audio_scaler     = None
+        self.audio_metrics    = {}
+        self.audio_trained    = False
+
+        self.video_model      = None
+        self.video_scaler     = None
+        self.video_metrics    = {}
+        self.video_trained    = False
+
         self._load_all()
 
     def _load_all(self):
         self._load_url_model()
         self._load_text_model()
+        self._load_visual_model()
+        self._load_audio_model()
+        self._load_video_model()
 
     def _load_url_model(self):
         required = ['model.joblib','scaler.joblib','selector.joblib',
@@ -134,10 +156,67 @@ class ModelManager:
         except Exception as e:
             print(f"  [Text] Load error: {e} → rule-based fallback")
 
+    def _load_visual_model(self):
+        required = ['model.joblib', 'scaler.joblib']
+        if not all(os.path.exists(os.path.join(VISUAL_MODEL_DIR, f)) for f in required):
+            print("  [Visual] No trained model found → using calibrated visual heuristics")
+            return
+        try:
+            self.visual_model  = joblib.load(os.path.join(VISUAL_MODEL_DIR, 'model.joblib'))
+            self.visual_scaler = joblib.load(os.path.join(VISUAL_MODEL_DIR, 'scaler.joblib'))
+            metrics_path = os.path.join(VISUAL_MODEL_DIR, 'metrics.json')
+            if os.path.exists(metrics_path):
+                with open(metrics_path) as fp:
+                    self.visual_metrics = json.load(fp)
+            self.visual_trained = True
+            acc = self.visual_metrics.get('accuracy', 0)
+            print(f"  [Visual] Trained model loaded  |  Accuracy: {acc:.2%}")
+        except Exception as e:
+            print(f"  [Visual] Load error: {e} → calibrated fallback")
+
+    def _load_audio_model(self):
+        required = ['model.joblib', 'scaler.joblib']
+        if not all(os.path.exists(os.path.join(AUDIO_MODEL_DIR, f)) for f in required):
+            print("  [Audio]  No trained model found → using calibrated acoustic heuristics")
+            return
+        try:
+            self.audio_model  = joblib.load(os.path.join(AUDIO_MODEL_DIR, 'model.joblib'))
+            self.audio_scaler = joblib.load(os.path.join(AUDIO_MODEL_DIR, 'scaler.joblib'))
+            metrics_path = os.path.join(AUDIO_MODEL_DIR, 'metrics.json')
+            if os.path.exists(metrics_path):
+                with open(metrics_path) as fp:
+                    self.audio_metrics = json.load(fp)
+            self.audio_trained = True
+            acc = self.audio_metrics.get('accuracy', 0)
+            print(f"  [Audio]  Trained model loaded  |  Accuracy: {acc:.2%}")
+        except Exception as e:
+            print(f"  [Audio]  Load error: {e} → calibrated fallback")
+
+    def _load_video_model(self):
+        required = ['model.joblib', 'scaler.joblib']
+        if not all(os.path.exists(os.path.join(VIDEO_MODEL_DIR, f)) for f in required):
+            print("  [Video]  No trained model found → using calibrated CV heuristics")
+            return
+        try:
+            self.video_model  = joblib.load(os.path.join(VIDEO_MODEL_DIR, 'model.joblib'))
+            self.video_scaler = joblib.load(os.path.join(VIDEO_MODEL_DIR, 'scaler.joblib'))
+            metrics_path = os.path.join(VIDEO_MODEL_DIR, 'metrics.json')
+            if os.path.exists(metrics_path):
+                with open(metrics_path) as fp:
+                    self.video_metrics = json.load(fp)
+            self.video_trained = True
+            acc = self.video_metrics.get('accuracy', 0)
+            print(f"  [Video]  Trained model loaded  |  Accuracy: {acc:.2%}")
+        except Exception as e:
+            print(f"  [Video]  Load error: {e} → calibrated fallback")
+
     def reload(self):
         """Hot-reload models after training."""
-        self.url_trained  = False
-        self.text_trained = False
+        self.url_trained    = False
+        self.text_trained   = False
+        self.visual_trained = False
+        self.audio_trained  = False
+        self.video_trained  = False
         self._load_all()
 
 
@@ -694,9 +773,20 @@ def analyze_image(url: str, dom_features: dict = None) -> dict:
         legit_dampener          # 15
     ], dtype=np.float64)
 
-    weights = np.array([1.2, 1.5, 2.8, 1.4, 1.6, 0.8, 0.7, 1.1, 1.0, 2.5, 1.2, 0.9, 0.3, 0.5, 1.8, -4.0], dtype=np.float64)
-    logit = float(np.dot(feat_vec, weights) - 2.4)
-    risk = 1.0 / (1.0 + np.exp(-np.clip(logit, -10.0, 10.0)))
+    if models.visual_trained:
+        try:
+            scaled = models.visual_scaler.transform([feat_vec])
+            proba = models.visual_model.predict_proba(scaled)[0]
+            risk = float(proba[1])
+        except Exception:
+            weights = np.array([1.2, 1.5, 2.8, 1.4, 1.6, 0.8, 0.7, 1.1, 1.0, 2.5, 1.2, 0.9, 0.3, 0.5, 1.8, -4.0], dtype=np.float64)
+            logit = float(np.dot(feat_vec, weights) - 2.4)
+            risk = 1.0 / (1.0 + np.exp(-np.clip(logit, -10.0, 10.0)))
+    else:
+        weights = np.array([1.2, 1.5, 2.8, 1.4, 1.6, 0.8, 0.7, 1.1, 1.0, 2.5, 1.2, 0.9, 0.3, 0.5, 1.8, -4.0], dtype=np.float64)
+        logit = float(np.dot(feat_vec, weights) - 2.4)
+        risk = 1.0 / (1.0 + np.exp(-np.clip(logit, -10.0, 10.0)))
+
     if is_legit:
         risk = min(risk, 0.04)
     elif not has_pwd and not brand_visual and not has_login_form:
@@ -783,9 +873,20 @@ def analyze_audio(url: str, text: str, dom_features: dict = None) -> dict:
         legit_dampener
     ], dtype=np.float64)
 
-    weights = np.array([1.2, 1.8, 3.0, 2.2, 0.6, 1.4, 2.5, 2.0, 1.0, 1.2, 2.8, -4.0], dtype=np.float64)
-    logit = float(np.dot(feat_vec, weights) - 2.8)
-    risk = 1.0 / (1.0 + np.exp(-np.clip(logit, -10.0, 10.0)))
+    if models.audio_trained:
+        try:
+            scaled = models.audio_scaler.transform([feat_vec])
+            proba = models.audio_model.predict_proba(scaled)[0]
+            risk = float(proba[1])
+        except Exception:
+            weights = np.array([1.2, 1.8, 3.0, 2.2, 0.6, 1.4, 2.5, 2.0, 1.0, 1.2, 2.8, -4.0], dtype=np.float64)
+            logit = float(np.dot(feat_vec, weights) - 2.8)
+            risk = 1.0 / (1.0 + np.exp(-np.clip(logit, -10.0, 10.0)))
+    else:
+        weights = np.array([1.2, 1.8, 3.0, 2.2, 0.6, 1.4, 2.5, 2.0, 1.0, 1.2, 2.8, -4.0], dtype=np.float64)
+        logit = float(np.dot(feat_vec, weights) - 2.8)
+        risk = 1.0 / (1.0 + np.exp(-np.clip(logit, -10.0, 10.0)))
+
     if is_legit:
         risk = min(risk, 0.05)
     risk = float(np.clip(risk, 0.02, 0.98))
@@ -895,9 +996,20 @@ def analyze_video(url: str, text: str, dom_features: dict = None, video_frames: 
         1.0 if is_legit else 0.0
     ], dtype=np.float64)
 
-    weights = np.array([1.5, 0.8, 1.4, 1.2, 2.5, 2.0, 0.0, -4.0], dtype=np.float64)
-    logit = float(np.dot(feat_vec, weights) - 2.8)
-    risk = 1.0 / (1.0 + np.exp(-np.clip(logit, -10.0, 10.0)))
+    if models.video_trained:
+        try:
+            scaled = models.video_scaler.transform([feat_vec])
+            proba = models.video_model.predict_proba(scaled)[0]
+            risk = float(proba[1])
+        except Exception:
+            weights = np.array([1.5, 0.8, 1.4, 1.2, 2.5, 2.0, 0.0, -4.0], dtype=np.float64)
+            logit = float(np.dot(feat_vec, weights) - 2.8)
+            risk = 1.0 / (1.0 + np.exp(-np.clip(logit, -10.0, 10.0)))
+    else:
+        weights = np.array([1.5, 0.8, 1.4, 1.2, 2.5, 2.0, 0.0, -4.0], dtype=np.float64)
+        logit = float(np.dot(feat_vec, weights) - 2.8)
+        risk = 1.0 / (1.0 + np.exp(-np.clip(logit, -10.0, 10.0)))
+
     if is_legit:
         risk = min(risk, 0.05)
     risk = float(np.clip(risk, 0.02, 0.95))
@@ -1065,11 +1177,38 @@ def health():
         "status":       "online",
         "system":       "PhishGuard Multi-Modal AI",
         "version":      "3.0",
-        "url_model":    "ML Ensemble (98.3%)" if models.url_trained  else "rule-based",
-        "text_model":   "ML TF-IDF (98.6%)" if models.text_trained else "rule-based",
-        "image_model":  "visual_forensics (16-D DOM)",
-        "audio_model":  "acoustic_forensics (12-D Spectral)",
-        "video_model":  "cv_forensics (8-D Optical/FFT)", 
+        "models": {
+            "url": {
+                "trained": models.url_trained,
+                "type": "Voting Ensemble (RF + GB + LR)",
+                "accuracy": models.url_metrics.get('accuracy')
+            },
+            "text": {
+                "trained": models.text_trained,
+                "type": "TF-IDF + Logistic Regression",
+                "accuracy": models.text_metrics.get('accuracy')
+            },
+            "visual": {
+                "trained": models.visual_trained,
+                "type": "Voting Ensemble (RF + LR)" if models.visual_trained else "Calibrated DOM Forensics",
+                "accuracy": models.visual_metrics.get('accuracy')
+            },
+            "audio": {
+                "trained": models.audio_trained,
+                "type": "Voting Ensemble (RF + LR)" if models.audio_trained else "Calibrated Acoustic Forensics",
+                "accuracy": models.audio_metrics.get('accuracy')
+            },
+            "video": {
+                "trained": models.video_trained,
+                "type": "Random Forest (CV & FFT)" if models.video_trained else "Calibrated CV Forensics",
+                "accuracy": models.video_metrics.get('accuracy')
+            }
+        },
+        "url_model":    f"ML Ensemble ({models.url_metrics.get('accuracy', 0):.1%})" if models.url_trained else "rule-based",
+        "text_model":   f"ML TF-IDF ({models.text_metrics.get('accuracy', 0):.1%})" if models.text_trained else "rule-based",
+        "image_model":  f"ML Visual Forest ({models.visual_metrics.get('accuracy', 0):.1%})" if models.visual_trained else "visual_forensics (16-D DOM)",
+        "audio_model":  f"ML Acoustic Forest ({models.audio_metrics.get('accuracy', 0):.1%})" if models.audio_trained else "acoustic_forensics (12-D Spectral)",
+        "video_model":  f"ML CV Forest ({models.video_metrics.get('accuracy', 0):.1%})" if models.video_trained else "cv_forensics (8-D Optical/FFT)", 
         "url_accuracy": models.url_metrics.get('accuracy'),
         "text_accuracy":models.text_metrics.get('accuracy'),
         "timestamp":    datetime.now().isoformat(),
