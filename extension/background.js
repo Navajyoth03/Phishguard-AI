@@ -124,15 +124,31 @@ async function analyzeTab(tabId, tab) {
           let videoEl = document.querySelector('video');
           let hasVideo = !!videoEl;
           let frames = [];
+          let videoCrop = null;
 
           if (videoEl) {
+            try {
+              const rect = videoEl.getBoundingClientRect();
+              if (rect.width > 50 && rect.height > 50) {
+                videoCrop = {
+                  x: Math.max(0, rect.left),
+                  y: Math.max(0, rect.top),
+                  width: rect.width,
+                  height: rect.height,
+                  windowWidth: window.innerWidth,
+                  windowHeight: window.innerHeight,
+                  dpr: window.devicePixelRatio || 1
+                };
+              }
+            } catch (_) {}
+
             try {
               const canvas = document.createElement('canvas');
               canvas.width = 320;
               canvas.height = 240;
               const ctx = canvas.getContext('2d');
 
-              for (let i = 0; i < 6; i++) {
+              for (let i = 0; i < 8; i++) {
                 try {
                   ctx.drawImage(videoEl, 0, 0, 320, 240);
                   const dataUrl = canvas.toDataURL('image/jpeg', 0.5);
@@ -142,7 +158,7 @@ async function analyzeTab(tabId, tab) {
                 } catch (corsErr) {
                   break; // Cross-origin video, will fallback to tab capture
                 }
-                await new Promise(r => setTimeout(r, 100));
+                await new Promise(r => setTimeout(r, 180));
               }
             } catch (canvasErr) {}
           }
@@ -212,15 +228,17 @@ async function analyzeTab(tabId, tab) {
             input_count: inputCount,
             has_fixed_overlay: hasFixedOverlay
           };
-          return { text: textContent, features: features, frames: frames };
-        } catch { return { text: '', features: {}, frames: [] }; }
+          return { text: textContent, features: features, frames: frames, videoCrop: videoCrop };
+        } catch { return { text: '', features: {}, frames: [], videoCrop: null }; }
       },
     });
 
+    let videoCrop = null;
     if (res?.[0]?.result) {
       pageText = res[0].result.text;
       domFeatures = res[0].result.features;
       videoFrames = res[0].result.frames || [];
+      videoCrop = res[0].result.videoCrop || null;
     }
   } catch (e) {
     console.warn(`[PhishGuard] Script injection note for tab ${tabId}:`, e.message);
@@ -229,12 +247,12 @@ async function analyzeTab(tabId, tab) {
   // Cross-Origin / Screen Capture Fallback (e.g. YouTube, iframes, external CDNs)
   if (domFeatures.has_video && videoFrames.length === 0 && tab.windowId) {
     try {
-      for (let i = 0; i < 4; i++) {
-        const tabCap = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 50 });
+      for (let i = 0; i < 8; i++) {
+        const tabCap = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 60 });
         if (tabCap && tabCap.includes(',')) {
           videoFrames.push(tabCap.split(',')[1]);
         }
-        await sleep(150);
+        await sleep(200);
       }
     } catch (capErr) {
       console.warn('[PhishGuard] Tab capture fallback note:', capErr.message);
@@ -245,7 +263,8 @@ async function analyzeTab(tabId, tab) {
     url: tab.url,
     text: pageText,
     dom_features: domFeatures,
-    video_frames: videoFrames
+    video_frames: videoFrames,
+    video_crop: videoCrop
   };
 
   // Resolve backend and execute request with smart failover

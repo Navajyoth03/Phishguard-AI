@@ -994,7 +994,7 @@ def analyze_audio(url: str, text: str, dom_features: dict = None) -> dict:
     }
 
 
-def analyze_video(url: str, text: str, dom_features: dict = None, video_frames: list = None) -> dict:
+def analyze_video(url: str, text: str, dom_features: dict = None, video_frames: list = None, video_crop: dict = None) -> dict:
     """
     Forensic Computer Vision & Deepfake Video Engine
     Uses Laplacian shutter blur dynamics, 2D Fast Fourier Transform (FFT) sensor noise,
@@ -1021,10 +1021,36 @@ def analyze_video(url: str, text: str, dom_features: dict = None, video_frames: 
             import test_video
 
             decoded_frames = []
-            for b64 in video_frames[:10]:
+            for b64 in video_frames[:12]:
                 img_data = base64.b64decode(b64)
-                im = Image.open(io.BytesIO(img_data)).convert('L').resize((320, 240))
-                decoded_frames.append(np.array(im, dtype=np.float64))
+                im = Image.open(io.BytesIO(img_data))
+
+                # If bounding box is provided (e.g. YouTube tab capture), crop to video player
+                if video_crop and isinstance(video_crop, dict) and video_crop.get('width', 0) > 20:
+                    try:
+                        img_w, img_h = im.size
+                        win_w = float(video_crop.get('windowWidth') or img_w)
+                        win_h = float(video_crop.get('windowHeight') or img_h)
+                        scale_x = img_w / win_w if win_w > 0 else 1.0
+                        scale_y = img_h / win_h if win_h > 0 else 1.0
+
+                        vx = float(video_crop.get('x', 0))
+                        vy = float(video_crop.get('y', 0))
+                        vw = float(video_crop.get('width', 0))
+                        vh = float(video_crop.get('height', 0))
+
+                        x1 = max(0, min(int(vx * scale_x), img_w - 10))
+                        y1 = max(0, min(int(vy * scale_y), img_h - 10))
+                        x2 = max(x1 + 10, min(int((vx + vw) * scale_x), img_w))
+                        y2 = max(y1 + 10, min(int((vy + vh) * scale_y), img_h))
+
+                        if (x2 - x1) > 20 and (y2 - y1) > 20:
+                            im = im.crop((x1, y1, x2, y2))
+                    except Exception as crop_err:
+                        print(f"  [Video Crop Note] {crop_err}")
+
+                im_gray = im.convert('L').resize((320, 240))
+                decoded_frames.append(np.array(im_gray, dtype=np.float64))
 
             cv_res = test_video.analyze_numpy_frames(decoded_frames)
             risk = cv_res['risk_score']
@@ -1308,6 +1334,7 @@ def analyze():
     text = data.get('text', '').strip()
     dom_features = data.get('dom_features', {})
     video_frames = data.get('video_frames', [])
+    video_crop = data.get('video_crop', None)
 
     if (not url or
         url.startswith(('chrome://','edge://','about:','chrome-extension://','moz-extension://'))):
@@ -1320,7 +1347,7 @@ def analyze():
     t_res   = analyze_text(text, url)
     img_res = analyze_image(url, dom_features)
     aud_res = analyze_audio(url, text, dom_features)
-    vid_res = analyze_video(url, text, dom_features, video_frames)
+    vid_res = analyze_video(url, text, dom_features, video_frames, video_crop)
 
     print(f"  URL  [{u_res['method']:16}]: {u_res['risk_score']:.2%}")
     print(f"  Text [{t_res['method']:16}]: {t_res['risk_score']:.2%}")
