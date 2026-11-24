@@ -726,26 +726,11 @@ def analyze_text(text: str, url: str = None) -> dict:
         return {'risk_score': 0.04, 'confidence': 0.05, 'embedding': emb,
                 'indicators': [], 'method': 'neutral'}
 
-    # If browsing trusted knowledge, search, or streaming media platforms,
-    # the text contains user search queries, video titles, or encyclopedia entries.
-    is_trusted_media = False
-    if url:
-        try:
-            h = (urlparse(url).hostname or "").lower()
-            if is_trusted_domain(h):
-                is_trusted_media = True
-        except Exception:
-            pass
-
     if models.text_trained:
         try:
             X = models.text_vectorizer.transform([text])
             proba = models.text_classifier.predict_proba(X)[0]
             risk = float(proba[1])
-
-            if is_trusted_media:
-                # Text contains user query or benign platform text
-                risk = min(risk, 0.25)
 
             # Deterministic Johnson-Lindenstrauss projection from TF-IDF sparse space into 64D
             dense = np.array(X.todense()).flatten()
