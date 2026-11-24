@@ -71,12 +71,44 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnLocal) btnLocal.addEventListener('click', () => setBackendMode('local'));
   if (btnCloud) btnCloud.addEventListener('click', () => setBackendMode('cloud'));
 
-  // Listen for storage updates (e.g. smart failover in background)
+  // Listen for storage updates (e.g. active tab analysis arriving or smart failover)
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && changes[STORAGE_BACKEND_KEY]) {
-      updateBackendDisplay(changes[STORAGE_BACKEND_KEY].newValue);
+    if (area === 'local') {
+      if (currentTabId && changes[currentTabId.toString()]) {
+        const newData = changes[currentTabId.toString()].newValue;
+        if (newData && !newData.error && newData.final_risk_score !== undefined) {
+          setStatus('online', 'Protected');
+          renderAnalysis(newData);
+        } else if (newData && newData.error) {
+          setStatus('offline', 'Offline');
+          renderOffline();
+        }
+      }
+      if (changes[STORAGE_BACKEND_KEY]) {
+        updateBackendDisplay(changes[STORAGE_BACKEND_KEY].newValue);
+      }
     }
   });
+
+  // Bind Re-scan Button
+  const btnRescan = document.getElementById('btnRescan');
+  if (btnRescan) {
+    btnRescan.addEventListener('click', () => {
+      if (currentTabId) {
+        setStatus('busy', 'Analyzing');
+        renderWaiting();
+        chrome.runtime.sendMessage({
+          action: 'analyzeActiveTab',
+          tabId: currentTabId
+        }, (response) => {
+          if (response && response.data && !response.data.error) {
+            setStatus('online', 'Protected');
+            renderAnalysis(response.data);
+          }
+        });
+      }
+    });
+  }
 
   // Query Active Tab
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -102,12 +134,41 @@ document.addEventListener('DOMContentLoaded', () => {
         setStatus('offline', 'Offline');
         renderOffline();
       } else {
-        setStatus('busy', 'Analyzing');
-        renderWaiting();
+        // Tab not analyzed yet - check file:// permission or trigger immediately
+        if (tab.url && tab.url.startsWith('file://')) {
+          if (chrome.extension.isAllowedFileSchemeAccess) {
+            chrome.extension.isAllowedFileSchemeAccess((isAllowed) => {
+              if (!isAllowed) {
+                setStatus('busy', 'Permission Needed');
+                renderFilePermissionNotice();
+                return;
+              }
+              triggerActiveTabAnalysis(tab);
+            });
+          } else {
+            triggerActiveTabAnalysis(tab);
+          }
+        } else {
+          triggerActiveTabAnalysis(tab);
+        }
       }
     });
   });
 });
+
+function triggerActiveTabAnalysis(tab) {
+  setStatus('busy', 'Analyzing');
+  renderWaiting();
+  chrome.runtime.sendMessage({
+    action: 'analyzeActiveTab',
+    tabId: tab.id
+  }, (response) => {
+    if (response && response.data && !response.data.error) {
+      setStatus('online', 'Protected');
+      renderAnalysis(response.data);
+    }
+  });
+}
 
 // ── DUAL-MODE SERVER LOGIC ────────────────────────────────
 function setBackendMode(mode) {
@@ -291,6 +352,14 @@ function renderWaiting() {
   setText('riskLabel', 'ANALYZING');
   setText('riskAction', 'Multi-modal analysis in progress across 5 modalities...');
   setText('geminiText', 'Awaiting PhishGuard cross-modal fusion engine...');
+}
+
+// ── FILE URL PERMISSION NOTICE ────────────────────────────
+function renderFilePermissionNotice() {
+  setGaugeScore(null, null);
+  setText('riskLabel', 'LOCAL FILE PERMISSION NEEDED');
+  setText('riskAction', 'Chrome requires permission to inspect file:/// pages.');
+  setText('geminiText', 'To analyze demo files directly from the folder:\n1. Open chrome://extensions\n2. Click "Details" on PhishGuard AI\n3. Turn ON "Allow access to file URLs"\n\n💡 Recommended: Run START_DEMO_PAGES.bat to browse via http://127.0.0.1:8000 (no permission required).');
 }
 
 // ── SIMULATOR ─────────────────────────────────────────────

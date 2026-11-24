@@ -64,7 +64,10 @@
       <div class="url-card">
         <div class="url-card-header">
           <span class="url-card-label">CURRENT PAGE</span>
-          <span class="url-backend-tag" id="activeBackendTag">⚡ Local</span>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <button id="btnRescan" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.18);color:#94a3b8;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer;" title="Re-scan current tab">🔄 Scan</button>
+            <span class="url-backend-tag" id="activeBackendTag">⚡ Local</span>
+          </div>
         </div>
         <div class="url-card-value" id="targetUrl">Loading...</div>
       </div>

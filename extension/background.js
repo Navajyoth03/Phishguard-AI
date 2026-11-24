@@ -105,6 +105,18 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   await analyzeTab(tabId, tab);
 });
 
+chrome.tabs.onActivated.addListener(async (activeInfo) => {
+  try {
+    const tab = await chrome.tabs.get(activeInfo.tabId);
+    if (tab && tab.url && (tab.url.startsWith('http://') || tab.url.startsWith('https://') || tab.url.startsWith('file://'))) {
+      const stored = await chrome.storage.local.get([activeInfo.tabId.toString()]);
+      if (!stored[activeInfo.tabId.toString()]) {
+        await analyzeTab(activeInfo.tabId, tab);
+      }
+    }
+  } catch (_) {}
+});
+
 async function analyzeTab(tabId, tab) {
   // Give DOM a brief moment to render
   await sleep(400);
@@ -326,10 +338,10 @@ async function analyzeTab(tabId, tab) {
     console.warn(`[PhishGuard] Analysis failed for ${tab.url}`);
     await chrome.storage.local.set({ [tabId.toString()]: { error: true, url: tab.url, _backend: backend } });
     setBadge(tabId, '?', '#6B7280');
-    return;
+    return null;
   }
 
-  if (data.status === 'ignored') return;
+  if (data.status === 'ignored') return null;
 
   // Save per-tab result for popup
   await chrome.storage.local.set({ [tabId.toString()]: data });
@@ -427,10 +439,29 @@ async function analyzeTab(tabId, tab) {
       ]
     }).catch(err => console.warn('[PhishGuard] Failed to inject warning overlay:', err));
   }
+
+  return data;
 }
 
 // ── MESSAGE LISTENER (POPUP CONTROLS) ─────────────────────────
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === 'analyzeActiveTab') {
+    (async () => {
+      try {
+        const tab = await chrome.tabs.get(request.tabId);
+        if (tab && tab.url) {
+          const data = await analyzeTab(tab.id, tab);
+          sendResponse({ success: true, data: data });
+          return;
+        }
+      } catch (err) {
+        console.warn('[PhishGuard] analyzeActiveTab error:', err);
+      }
+      sendResponse({ success: false });
+    })();
+    return true;
+  }
+
   if (request.action === 'setServerMode') {
     (async () => {
       const mode = request.mode; // 'auto', 'local', or 'cloud'
