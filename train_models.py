@@ -91,21 +91,63 @@ print("=" * 70)
 
 # ─── Vocabulary & Constants ──────────────────────────────────────────────────
 LEGIT_DOMAINS = [
-    "google.com","gmail.com","youtube.com","facebook.com","twitter.com",
-    "linkedin.com","github.com","stackoverflow.com","wikipedia.org","amazon.com",
-    "microsoft.com","apple.com","netflix.com","instagram.com","reddit.com",
-    "discord.com","spotify.com","zoom.us","adobe.com","dropbox.com",
-    "stripe.com","shopify.com","twitch.tv","medium.com","notion.so",
-    "cloudflare.com","vercel.com","heroku.com","digitalocean.com","aws.amazon.com",
-    "flipkart.com","amazon.in","myntra.com","bigbasket.com","swiggy.com",
-    "zomato.com","paytm.com","phonepe.com","razorpay.com","freshworks.com",
-    "zoho.com","irctc.co.in","sbi.co.in","hdfcbank.com","icicibank.com",
-    "axisbank.com","india.gov.in","ndtv.com","thehindu.com","makemytrip.com",
-    "bookmyshow.com","naukri.com","ola.com","oyo.com","meesho.com",
-    "iitb.ac.in","iitd.ac.in","iitm.ac.in","iisc.ac.in","nptel.ac.in",
-    "byjus.com","unacademy.com","vedantu.com","zerodha.com","groww.in",
-    "policybazaar.com","practo.com","1mg.com","netmeds.com","pharmeasy.in",
+    # Search, Cloud & Major Tech
+    "google.com","gmail.com","youtube.com","facebook.com","twitter.com","x.com",
+    "linkedin.com","github.com","github.io","gitlab.com","gitlab.io","stackoverflow.com",
+    "wikipedia.org","wikimedia.org","amazon.com","microsoft.com","apple.com","netflix.com",
+    "instagram.com","reddit.com","discord.com","spotify.com","zoom.us","adobe.com","dropbox.com",
+    "stripe.com","shopify.com","twitch.tv","medium.com","vercel.com","vercel.app","netlify.app",
+    "render.com","onrender.com","supabase.com","cloudflare.com","digitalocean.com",
+    "aws.amazon.com","azure.com","pypi.org","npmjs.com","docker.com","postman.com",
+    # Modern AI & ML Ecosystem
+    "openai.com","chatgpt.com","claude.ai","anthropic.com","perplexity.ai","cursor.com",
+    "cursor.sh","huggingface.co","deepmind.google","gemini.google.com","midjourney.com",
+    "replicate.com","stability.ai","elevenlabs.io","poe.com","cohere.com","mistral.ai",
+    "groq.com","v0.dev","shadcn.com","modal.com","runwayml.com","jasper.ai","copy.ai",
+    "phind.com","kaggle.com",
+    # Collaboration & Productivity
+    "notion.so","notion.site","canva.com","canva.site","figma.com","miro.com","slack.com",
+    "trello.com","asana.com","airtable.com","atlassian.net","jira.com","confluence.com",
+    "linear.app","loom.com",
+    # Indian & Global Services
+    "flipkart.com","amazon.in","myntra.com","bigbasket.com","swiggy.com","zomato.com",
+    "paytm.com","phonepe.com","razorpay.com","freshworks.com","zoho.com","irctc.co.in",
+    "sbi.co.in","hdfcbank.com","icicibank.com","axisbank.com","india.gov.in","ndtv.com",
+    "thehindu.com","makemytrip.com","bookmyshow.com","naukri.com","ola.com","meesho.com",
+    "zerodha.com","groww.in","policybazaar.com","practo.com","1mg.com","netmeds.com",
+    # Academic, Scientific & Educational
+    "arxiv.org","nature.com","science.org","sciencedirect.com","springer.com","wiley.com",
+    "ieee.org","acm.org","researchgate.net","biorxiv.org","medrxiv.org","nih.gov",
+    "ncbi.nlm.nih.gov","cdc.gov","who.int","coursera.org","edx.org","udemy.com",
+    "khanacademy.org","byjus.com","unacademy.com","vedantu.com",
+    "timesofindia.indiatimes.com","economictimes.indiatimes.com","hindustantimes.com","livemint.com",
+    # Streaming & Media
+    "hotstar.com","disneyplus.com","jiocinema.com","primevideo.com",
+    "sonyliv.com","zee5.com","vimeo.com","dailymotion.com",
 ]
+
+TRUSTED_TLD_SUFFIXES = (
+    '.edu', '.gov', '.mil', '.ac.in', '.edu.in', '.ac.uk', 
+    '.edu.au', '.gov.in', '.gov.uk', '.edu.sg', '.ac.jp',
+    '.edu.cn', '.ac.za', '.edu.br', '.edu.mx', '.edu.pk', '.ac.nz',
+    '.int'
+)
+
+def is_trusted_domain(host: str) -> bool:
+    """Returns True if host belongs to verified educational, government, or whitelisted platforms."""
+    host = (host or "").lower().strip()
+    if not host:
+        return False
+    parts = host.replace("www.", "").split(".")
+    root = '.'.join(parts[-2:]) if len(parts) >= 2 else host
+    
+    if root in LEGIT_DOMAIN_SET or host in LEGIT_DOMAIN_SET:
+        return True
+        
+    if any(host.endswith(sfx) for sfx in TRUSTED_TLD_SUFFIXES):
+        return True
+        
+    return False
 
 BRAND_NAMES = [
     "paypal","google","amazon","facebook","apple","microsoft","netflix",
@@ -157,7 +199,7 @@ EPHEMERAL_TLDS = {
 
 
 def normalize_homoglyphs(text: str) -> str:
-    s = text.lower().replace('rn', 'm').replace('vv', 'w').replace('cl', 'd')
+    s = text.lower()
     return s.translate(HOMOGLYPH_TABLE)
 
 
@@ -235,7 +277,7 @@ def extract_url_features(url: str) -> dict:
         f['many_subdomains']   = 1 if f['subdomain_count'] > 2 else 0
         f['domain_has_digits'] = 1 if any(c.isdigit() for c in (parts[-2] if len(parts) >= 2 else '')) else 0
         root_domain            = '.'.join(parts[-2:]) if len(parts) >= 2 else host
-        f['is_known_legit']    = 1 if root_domain in LEGIT_DOMAIN_SET else 0
+        f['is_known_legit']    = 1 if is_trusted_domain(host) else 0
 
         # 38-40: TLD analysis
         suffix = '.' + parts[-1] if parts else ''
@@ -291,20 +333,22 @@ def extract_url_features(url: str) -> dict:
 
         # 58-60: Typosquatting & Homoglyphs
         domain_candidate = parts[-2] if len(parts) >= 2 else host
-        norm_domain = normalize_homoglyphs(domain_candidate)
         subdomain_str = '.'.join(parts[:-2]) if len(parts) > 2 else ''
-        norm_subdomain = normalize_homoglyphs(subdomain_str)
+
+        # Check for actual non-ASCII Cyrillic homoglyphs or digit leetspeak in domain
+        has_cyrillic = any(c in domain_candidate or c in subdomain_str for c in 'аеорсухіј')
+        has_digit_leetspeak = bool(re.search(r'[a-zA-Z]+[013458@$!]+[a-zA-Z]+', domain_candidate))
+        has_homo = 1 if (has_cyrillic or has_digit_leetspeak) else 0
 
         is_typosquat = 0
         min_lev = 99
-        has_homo = 1 if (norm_domain != domain_candidate or norm_subdomain != subdomain_str) else 0
 
         domain_tokens = [t for t in re.split(r'[-_.]', domain_candidate) if len(t) >= 3]
         if '-' in domain_candidate and len(domain_candidate) >= 3:
             domain_tokens.append(domain_candidate)
 
         for tok in domain_tokens:
-            norm_tok = normalize_homoglyphs(tok)
+            norm_tok = tok.translate(HOMOGLYPH_TABLE)
             for b in BRAND_SET:
                 if tok == b:
                     continue

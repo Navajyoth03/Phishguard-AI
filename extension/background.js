@@ -333,9 +333,31 @@ async function analyzeTab(tabId, tab) {
 
   console.log(`[PhishGuard] [${data._backend?.active?.toUpperCase()}] ${tab.url.substring(0, 60)} → ${(score * 100).toFixed(0)}% ${data.risk_level}`);
 
-  // Inject Warning Overlay if risk is elevated
+  // Inject Warning Overlay ONLY for confirmed high-confidence threats
+  // Never show full-screen blocking overlay easily just for a mild or isolated URL signal
   const isVideoHighRisk = (data.modalities && data.modalities.video && data.modalities.video.risk_score >= 0.70);
-  if (score >= 0.50 || isVideoHighRisk) {
+  const isAudioHighRisk = (data.individual_risks?.audio && data.individual_risks.audio >= 0.75);
+  const isVisualHighRisk = (data.individual_risks?.image && data.individual_risks.image >= 0.70);
+  const isTextHighRisk = (data.individual_risks?.text && data.individual_risks.text >= 0.75);
+  const hasPayloadThreat = isVideoHighRisk || isAudioHighRisk || isVisualHighRisk || isTextHighRisk;
+
+  // Check if domain is trusted (.edu, .gov, or whitelisted academic/government)
+  let host = '';
+  try { host = (new URL(tab.url || 'http://localhost')).hostname.toLowerCase(); } catch (_) {}
+  const isEducationalOrGov = /(\.edu|\.gov|\.mil|\.ac\.in|\.edu\.in|\.ac\.uk|\.edu\.au)$/i.test(host);
+
+  // Overlay triggers only if:
+  // 1. Overall confirmed CRITICAL threat (score >= 0.82) WITH either payload evidence or explicit brand spoofing indicators, OR
+  // 2. High risk (score >= 0.70) backed by multi-modal confirmation (visual login form harvesting, deepfake, audio scam), OR
+  // 3. Severe deepfake video exploit (isVideoHighRisk)
+  // AND the domain is NOT an educational or government portal.
+  const shouldShowOverlay = !isEducationalOrGov && (
+    (score >= 0.82 && (hasPayloadThreat || (data.url_indicators && data.url_indicators.some(i => /impersonation|typosquat|homoglyph|credential/i.test(i))))) ||
+    (score >= 0.70 && hasPayloadThreat) ||
+    isVideoHighRisk
+  );
+
+  if (shouldShowOverlay) {
     chrome.scripting.executeScript({
       target: { tabId },
       func: (riskScore, explanation, backendName) => {

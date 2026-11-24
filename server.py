@@ -222,24 +222,63 @@ class ModelManager:
 
 # ─── Shared vocabulary (mirrors train_models.py) ─────────────────────────────
 LEGIT_DOMAINS = {
-    "google.com","gmail.com","youtube.com","facebook.com","twitter.com",
-    "linkedin.com","github.com","stackoverflow.com","wikipedia.org","amazon.com",
-    "microsoft.com","apple.com","netflix.com","instagram.com","reddit.com",
-    "discord.com","spotify.com","zoom.us","adobe.com","dropbox.com",
-    "stripe.com","shopify.com","twitch.tv","medium.com","vercel.com",
-    "flipkart.com","amazon.in","myntra.com","bigbasket.com","swiggy.com",
-    "zomato.com","paytm.com","phonepe.com","razorpay.com","freshworks.com",
-    "zoho.com","irctc.co.in","sbi.co.in","hdfcbank.com","icicibank.com",
-    "axisbank.com","india.gov.in","ndtv.com","thehindu.com","makemytrip.com",
-    "bookmyshow.com","naukri.com","ola.com","meesho.com","zerodha.com",
-    "groww.in","policybazaar.com","practo.com","1mg.com","netmeds.com",
-    "iitb.ac.in","iitd.ac.in","iitm.ac.in","iisc.ac.in","nptel.ac.in",
-    "byjus.com","unacademy.com","vedantu.com","timesofindia.indiatimes.com",
-    "economictimes.indiatimes.com","hindustantimes.com","livemint.com",
+    # Search, Cloud & Major Tech
+    "google.com","gmail.com","youtube.com","facebook.com","twitter.com","x.com",
+    "linkedin.com","github.com","github.io","gitlab.com","gitlab.io","stackoverflow.com",
+    "wikipedia.org","wikimedia.org","amazon.com","microsoft.com","apple.com","netflix.com",
+    "instagram.com","reddit.com","discord.com","spotify.com","zoom.us","adobe.com","dropbox.com",
+    "stripe.com","shopify.com","twitch.tv","medium.com","vercel.com","vercel.app","netlify.app",
+    "render.com","onrender.com","supabase.com","cloudflare.com","digitalocean.com",
+    "aws.amazon.com","azure.com","pypi.org","npmjs.com","docker.com","postman.com",
+    # Modern AI & ML Ecosystem
+    "openai.com","chatgpt.com","claude.ai","anthropic.com","perplexity.ai","cursor.com",
+    "cursor.sh","huggingface.co","deepmind.google","gemini.google.com","midjourney.com",
+    "replicate.com","stability.ai","elevenlabs.io","poe.com","cohere.com","mistral.ai",
+    "groq.com","v0.dev","shadcn.com","modal.com","runwayml.com","jasper.ai","copy.ai",
+    "phind.com","kaggle.com",
+    # Collaboration & Productivity
+    "notion.so","notion.site","canva.com","canva.site","figma.com","miro.com","slack.com",
+    "trello.com","asana.com","airtable.com","atlassian.net","jira.com","confluence.com",
+    "linear.app","loom.com",
+    # Indian & Global Services
+    "flipkart.com","amazon.in","myntra.com","bigbasket.com","swiggy.com","zomato.com",
+    "paytm.com","phonepe.com","razorpay.com","freshworks.com","zoho.com","irctc.co.in",
+    "sbi.co.in","hdfcbank.com","icicibank.com","axisbank.com","india.gov.in","ndtv.com",
+    "thehindu.com","makemytrip.com","bookmyshow.com","naukri.com","ola.com","meesho.com",
+    "zerodha.com","groww.in","policybazaar.com","practo.com","1mg.com","netmeds.com",
+    # Academic, Scientific & Educational
+    "arxiv.org","nature.com","science.org","sciencedirect.com","springer.com","wiley.com",
+    "ieee.org","acm.org","researchgate.net","biorxiv.org","medrxiv.org","nih.gov",
+    "ncbi.nlm.nih.gov","cdc.gov","who.int","coursera.org","edx.org","udemy.com",
+    "khanacademy.org","byjus.com","unacademy.com","vedantu.com",
+    "timesofindia.indiatimes.com","economictimes.indiatimes.com","hindustantimes.com","livemint.com",
     # Streaming & Media
     "hotstar.com","disneyplus.com","jiocinema.com","primevideo.com",
     "sonyliv.com","zee5.com","vimeo.com","dailymotion.com",
 }
+
+TRUSTED_TLD_SUFFIXES = (
+    '.edu', '.gov', '.mil', '.ac.in', '.edu.in', '.ac.uk', 
+    '.edu.au', '.gov.in', '.gov.uk', '.edu.sg', '.ac.jp',
+    '.edu.cn', '.ac.za', '.edu.br', '.edu.mx', '.edu.pk', '.ac.nz',
+    '.int'
+)
+
+def is_trusted_domain(host: str) -> bool:
+    """Returns True if host belongs to verified educational, government, or whitelisted platforms."""
+    host = (host or "").lower().strip()
+    if not host:
+        return False
+    parts = host.replace("www.", "").split(".")
+    root = '.'.join(parts[-2:]) if len(parts) >= 2 else host
+    
+    if root in LEGIT_DOMAINS or host in LEGIT_DOMAINS:
+        return True
+        
+    if any(host.endswith(sfx) for sfx in TRUSTED_TLD_SUFFIXES):
+        return True
+        
+    return False
 
 SUSP_TLD_SET = {'.tk','.ml','.ga','.cf','.xyz','.club','.online','.site',
                '.website','.space','.top','.click','.download','.review',
@@ -299,7 +338,7 @@ HOMOGLYPH_TABLE = str.maketrans({
 })
 
 def normalize_homoglyphs(text: str) -> str:
-    s = text.lower().replace('rn', 'm').replace('vv', 'w').replace('cl', 'd')
+    s = text.lower()
     return s.translate(HOMOGLYPH_TABLE)
 
 def levenshtein_dist(s1: str, s2: str) -> int:
@@ -388,7 +427,7 @@ def _extract_url_features(url: str) -> dict:
         f['many_subdomains']    = 1 if f['subdomain_count'] > 2 else 0
         f['domain_has_digits']  = 1 if any(c.isdigit() for c in (parts[-2] if len(parts)>=2 else '')) else 0
         root_domain             = '.'.join(parts[-2:]) if len(parts) >= 2 else host
-        f['is_known_legit']     = 1 if root_domain in LEGIT_DOMAINS else 0
+        f['is_known_legit']     = 1 if is_trusted_domain(host) else 0
         suffix                  = '.' + parts[-1] if parts else ''
         f['has_susp_tld']       = 1 if suffix in SUSP_TLD_SET else 0
         f['tld_in_url_count']   = sum(url_l.count(t) for t in SUSP_TLD_SET)
@@ -428,20 +467,22 @@ def _extract_url_features(url: str) -> dict:
 
         # 58-60: Typosquatting & Homoglyphs (Levenshtein distance)
         domain_candidate = parts[-2] if len(parts) >= 2 else host
-        norm_domain = normalize_homoglyphs(domain_candidate)
         subdomain_str = '.'.join(parts[:-2]) if len(parts) > 2 else ''
-        norm_subdomain = normalize_homoglyphs(subdomain_str)
+
+        # Check for actual non-ASCII Cyrillic homoglyphs or digit leetspeak in domain
+        has_cyrillic = any(c in domain_candidate or c in subdomain_str for c in 'аеорсухіј')
+        has_digit_leetspeak = bool(re.search(r'[a-zA-Z]+[013458@$!]+[a-zA-Z]+', domain_candidate))
+        has_homo = 1 if (has_cyrillic or has_digit_leetspeak) else 0
 
         is_typosquat = 0
         min_lev = 99
-        has_homo = 1 if (norm_domain != domain_candidate or norm_subdomain != subdomain_str) else 0
 
         domain_tokens = [t for t in re.split(r'[-_.]', domain_candidate) if len(t) >= 3]
         if '-' in domain_candidate and len(domain_candidate) >= 3:
             domain_tokens.append(domain_candidate)
 
         for tok in domain_tokens:
-            norm_tok = normalize_homoglyphs(tok)
+            norm_tok = tok.translate(HOMOGLYPH_TABLE)
             for b in BRAND_NAMES:
                 if tok == b:
                     continue  # Exact match handled by brand_host_imperson
@@ -499,7 +540,7 @@ def _rule_url(url: str) -> dict:
         host = (p.hostname or "").lower()
         parts = host.replace("www.", "").split(".")
         root = '.'.join(parts[-2:]) if len(parts) >= 2 else host
-        is_legit = root in LEGIT_DOMAINS
+        is_legit = is_trusted_domain(host)
     except Exception:
         pass
 
@@ -628,14 +669,28 @@ def analyze_url(url: str) -> dict:
             proba = models.url_model.predict_proba(X_sel)[0]
             risk = float(proba[1])
 
-            # Apply legitimacy correction
+            # Apply legitimacy & clean-profile correction
             try:
                 p = urlparse(url)
                 host = (p.hostname or "").lower()
                 parts = host.replace("www.", "").split(".")
                 root = '.'.join(parts[-2:]) if len(parts) >= 2 else host
-                if root in LEGIT_DOMAINS:
-                    risk = max(risk * 0.25, 0.02)
+                
+                # 1. Verified Institutional, Educational, Government, or Whitelisted Platforms
+                if is_trusted_domain(host):
+                    risk = min(risk * 0.05, 0.03)
+                # 2. Structurally pristine URLs on normal modern domains (.ai, .io, .dev, .com, .org, etc.)
+                elif (p.scheme == 'https' and 
+                      not feat.get('has_susp_tld') and 
+                      not feat.get('has_ip') and 
+                      not feat.get('is_typosquat') and 
+                      not feat.get('has_homoglyph') and 
+                      feat.get('num_susp_kw', 0) == 0 and 
+                      feat.get('brand_host_imperson', 0) == 0 and 
+                      feat.get('is_shortened', 0) == 0 and
+                      feat.get('subdomain_count', 0) <= 2):
+                    # No red flags whatsoever: calibrate the out-of-vocabulary RF score
+                    risk = min(risk, 0.12)
             except Exception:
                 pass
 
@@ -670,6 +725,11 @@ def analyze_url(url: str) -> dict:
 
 def analyze_text(text: str) -> dict:
     """Text analysis — uses trained TF-IDF+LR model with Johnson-Lindenstrauss 64-D embedding."""
+    if not text or len(text.strip()) < 10:
+        emb = np.zeros(64, dtype=np.float64)
+        return {'risk_score': 0.04, 'confidence': 0.05, 'embedding': emb,
+                'indicators': [], 'method': 'neutral'}
+
     if models.text_trained:
         try:
             X = models.text_vectorizer.transform([text])
@@ -722,7 +782,7 @@ def analyze_image(url: str, dom_features: dict = None) -> dict:
         host = (p.hostname or "").lower()
         parts = host.replace("www.", "").split(".")
         root_domain = '.'.join(parts[-2:]) if len(parts) >= 2 else host
-        is_legit = root_domain in LEGIT_DOMAINS
+        is_legit = is_trusted_domain(host)
     except Exception:
         pass
 
@@ -838,7 +898,7 @@ def analyze_audio(url: str, text: str, dom_features: dict = None) -> dict:
         host = (p.hostname or "").lower()
         parts = host.replace("www.", "").split(".")
         root_domain = '.'.join(parts[-2:]) if len(parts) >= 2 else host
-        is_legit = root_domain in LEGIT_DOMAINS
+        is_legit = is_trusted_domain(host)
     except Exception:
         pass
 
@@ -931,7 +991,7 @@ def analyze_video(url: str, text: str, dom_features: dict = None, video_frames: 
         host = (p.hostname or "").lower()
         parts = host.replace("www.", "").split(".")
         root_domain = '.'.join(parts[-2:]) if len(parts) >= 2 else host
-        is_legit = root_domain in LEGIT_DOMAINS
+        is_legit = is_trusted_domain(host)
     except Exception:
         pass
 
@@ -1250,7 +1310,9 @@ def analyze():
     print(f"  Vid  [{vid_res['method']:16}]: {vid_res['risk_score']:.2%}")
 
     # Multi-modal fusion with genuine 64-D mathematical embeddings
-    active_modalities = {'url': u_res, 'text': t_res}
+    active_modalities = {'url': u_res}
+    if text and len(text.strip()) >= 10:
+        active_modalities['text'] = t_res
     if dom_features.get('has_video') or vid_res.get('risk_score', 0) > 0.35:
         active_modalities['video'] = vid_res
     if dom_features.get('has_audio') or aud_res.get('risk_score', 0) > 0.35:
@@ -1278,8 +1340,8 @@ def analyze():
     host = (p.hostname or "").lower()
     parts = host.replace("www.", "").split(".")
     root = '.'.join(parts[-2:]) if len(parts) >= 2 else host
-    if root in LEGIT_DOMAINS:
-        shap.append({"feature": "Known Trusted Main Domain", "impact": -0.40, "direction": "-"})
+    if is_trusted_domain(host):
+        shap.append({"feature": "Verified Institutional / Trusted Domain", "impact": -0.45, "direction": "-"})
     if p.scheme == 'https':
         shap.append({"feature": "Valid HTTPS Certificate", "impact": -0.05, "direction": "-"})
 
