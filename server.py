@@ -723,18 +723,36 @@ def analyze_url(url: str) -> dict:
     return _rule_url(url)
 
 
-def analyze_text(text: str) -> dict:
+def analyze_text(text: str, url: str = None) -> dict:
     """Text analysis — uses trained TF-IDF+LR model with Johnson-Lindenstrauss 64-D embedding."""
     if not text or len(text.strip()) < 10:
         emb = np.zeros(64, dtype=np.float64)
         return {'risk_score': 0.04, 'confidence': 0.05, 'embedding': emb,
                 'indicators': [], 'method': 'neutral'}
 
+    # If browsing trusted knowledge, search, or streaming media platforms,
+    # the text contains user search queries, video titles, or encyclopedia entries.
+    is_trusted_media = False
+    if url:
+        try:
+            h = (urlparse(url).hostname or "").lower()
+            if any(h == d or h.endswith('.' + d) for d in [
+                'youtube.com', 'google.com', 'google.co.in', 'wikipedia.org', 
+                'wikimedia.org', 'github.com', 'reddit.com', 'twitter.com', 
+                'x.com', 'linkedin.com', 'spotify.com', 'hotstar.com', 'netflix.com'
+            ]):
+                is_trusted_media = True
+        except Exception:
+            pass
+
     if models.text_trained:
         try:
             X = models.text_vectorizer.transform([text])
             proba = models.text_classifier.predict_proba(X)[0]
             risk = float(proba[1])
+
+            if is_trusted_media:
+                risk = min(risk, 0.10)
 
             # Deterministic Johnson-Lindenstrauss projection from TF-IDF sparse space into 64D
             dense = np.array(X.todense()).flatten()
@@ -744,15 +762,16 @@ def analyze_text(text: str) -> dict:
             emb = emb / (np.linalg.norm(emb) + 1e-8)
 
             flags = []
-            text_l = text.lower()
-            kw = [k for k in PHISHING_TEXT_KW if k in text_l]
-            if kw: flags.append(f"Phishing language detected: '{kw[0]}'")
-            if re.search(r'\bexpir|\bact now|\burgent\b', text_l):
-                flags.append("Urgency/manipulation language")
-            if re.search(r'\bdear (customer|user|member)\b', text_l):
-                flags.append("Generic impersonal greeting")
-            if risk > 0.5 and not flags:
-                flags.append("Phishing content detected (ML text classifier)")
+            if not is_trusted_media:
+                text_l = text.lower()
+                kw = [k for k in PHISHING_TEXT_KW if k in text_l]
+                if kw: flags.append(f"Phishing language detected: '{kw[0]}'")
+                if re.search(r'\bexpir|\bact now|\burgent\b', text_l):
+                    flags.append("Urgency/manipulation language")
+                if re.search(r'\bdear (customer|user|member)\b', text_l):
+                    flags.append("Generic impersonal greeting")
+                if risk > 0.5 and not flags:
+                    flags.append("Phishing content detected (ML text classifier)")
 
             return {'risk_score': float(np.clip(risk, 0.01, 0.99)),
                     'confidence': float(abs(risk - 0.5) * 2),
@@ -1298,7 +1317,7 @@ def analyze():
     print(f"\n  Analyzing: {url[:70]}{'...' if len(url)>70 else ''}")
 
     u_res   = analyze_url(url)
-    t_res   = analyze_text(text)
+    t_res   = analyze_text(text, url)
     img_res = analyze_image(url, dom_features)
     aud_res = analyze_audio(url, text, dom_features)
     vid_res = analyze_video(url, text, dom_features, video_frames)

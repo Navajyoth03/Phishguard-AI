@@ -167,10 +167,11 @@ class FusionEngine:
             asymmetric_risk = weighted_avg_risk
 
         # 4. CROSS-MODAL ANOMALY / TROJAN HORSE OVERRIDE
-        # Scenario: A clean or whitelisted URL (e.g. sites.google.com, notion.site, canva.site)
-        # hosting an aggressive phishing payload in Visual/Text/Audio/Video
+        # Scenario: A clean hosting provider (e.g. sites.google.com, notion.site, canva.site)
+        # harboring an active credential harvesting payload in Visual DOM, Audio scam, or Deepfake
         url_risk = individual_risks.get('url', 0.5)
-        payload_modalities = [m for m in ['image', 'text', 'audio', 'video'] if m in individual_risks]
+        # Text alone on a clean domain is never a trojan horse (could be search results, blogs, or video titles)
+        payload_modalities = [m for m in ['image', 'audio', 'video'] if m in individual_risks]
         max_payload_risk = max([individual_risks[m] for m in payload_modalities] or [0.0])
         max_payload_mod = max(payload_modalities, key=lambda m: individual_risks[m]) if payload_modalities else None
 

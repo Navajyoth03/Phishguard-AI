@@ -333,28 +333,37 @@ async function analyzeTab(tabId, tab) {
 
   console.log(`[PhishGuard] [${data._backend?.active?.toUpperCase()}] ${tab.url.substring(0, 60)} → ${(score * 100).toFixed(0)}% ${data.risk_level}`);
 
-  // Inject Warning Overlay ONLY for confirmed high-confidence threats
-  // Never show full-screen blocking overlay easily just for a mild or isolated URL signal
-  const isVideoHighRisk = (data.modalities && data.modalities.video && data.modalities.video.risk_score >= 0.70);
-  const isAudioHighRisk = (data.individual_risks?.audio && data.individual_risks.audio >= 0.75);
-  const isVisualHighRisk = (data.individual_risks?.image && data.individual_risks.image >= 0.70);
-  const isTextHighRisk = (data.individual_risks?.text && data.individual_risks.text >= 0.75);
-  const hasPayloadThreat = isVideoHighRisk || isAudioHighRisk || isVisualHighRisk || isTextHighRisk;
-
-  // Check if domain is trusted (.edu, .gov, or whitelisted academic/government)
+  // Inject Warning Overlay ONLY for confirmed multi-modal critical threats
+  // NEVER show full-screen blocking overlay on trusted sites or for a single model alone!
   let host = '';
   try { host = (new URL(tab.url || 'http://localhost')).hostname.toLowerCase(); } catch (_) {}
+
+  const TRUSTED_PLATFORMS = [
+    'youtube.com', 'google.com', 'google.co.in', 'wikipedia.org', 'wikimedia.org',
+    'github.com', 'reddit.com', 'twitter.com', 'x.com', 'linkedin.com', 'instagram.com',
+    'netflix.com', 'amazon.com', 'amazon.in', 'microsoft.com', 'apple.com',
+    'stackoverflow.com', 'medium.com', 'spotify.com', 'hotstar.com', 'twitch.tv',
+    'vimeo.com', 'huggingface.co', 'claude.ai', 'chatgpt.com', 'openai.com',
+    'perplexity.ai', 'cursor.com', 'coursera.org'
+  ];
+  const isTrustedPlatform = TRUSTED_PLATFORMS.some(d => host === d || host.endsWith('.' + d));
   const isEducationalOrGov = /(\.edu|\.gov|\.mil|\.ac\.in|\.edu\.in|\.ac\.uk|\.edu\.au)$/i.test(host);
 
-  // Overlay triggers only if:
-  // 1. Overall confirmed CRITICAL threat (score >= 0.82) WITH either payload evidence or explicit brand spoofing indicators, OR
-  // 2. High risk (score >= 0.70) backed by multi-modal confirmation (visual login form harvesting, deepfake, audio scam), OR
-  // 3. Severe deepfake video exploit (isVideoHighRisk)
-  // AND the domain is NOT an educational or government portal.
-  const shouldShowOverlay = !isEducationalOrGov && (
-    (score >= 0.82 && (hasPayloadThreat || (data.url_indicators && data.url_indicators.some(i => /impersonation|typosquat|homoglyph|credential/i.test(i))))) ||
-    (score >= 0.70 && hasPayloadThreat) ||
-    isVideoHighRisk
+  // Count how many distinct models flagged high danger (risk >= 0.70)
+  const risks = data.individual_risks || {};
+  const dangerousModelsCount = Object.keys(risks).filter(k => risks[k] >= 0.70).length;
+
+  const isVideoHighRisk = (data.modalities && data.modalities.video && data.modalities.video.risk_score >= 0.70);
+  const isConfirmedDeepfakeExploit = (isVideoHighRisk && (data.video_indicators?.length >= 2 || data.is_deepfake));
+  const hasMultiModalAgreement = (dangerousModelsCount >= 2);
+
+  // Overlay triggers ONLY if:
+  // 1. NOT a trusted public content platform or educational/government domain
+  // 2. AND requires MULTI-MODAL agreement (at least 2 independent models >= 70% and overall score >= 85%)
+  //    OR a verified deepfake optical exploit with forensic artifacts
+  const shouldShowOverlay = !isTrustedPlatform && !isEducationalOrGov && (
+    (score >= 0.85 && hasMultiModalAgreement) ||
+    isConfirmedDeepfakeExploit
   );
 
   if (shouldShowOverlay) {
