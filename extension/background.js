@@ -421,6 +421,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       // If active tab ID is provided, immediately re-analyze it
       if (request.tabId) {
         chrome.tabs.get(request.tabId, (tab) => {
+          if (chrome.runtime.lastError || !tab) return;
           if (tab && tab.url) analyzeTab(tab.id, tab);
         });
       }
@@ -440,13 +441,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'reanalyzeTab' && request.tabId) {
     (async () => {
       chrome.tabs.get(request.tabId, async (tab) => {
-        if (tab && tab.url) {
-          await analyzeTab(tab.id, tab);
-          const result = await chrome.storage.local.get([tab.id.toString()]);
-          sendResponse({ success: true, data: result[tab.id.toString()] });
-        } else {
-          sendResponse({ success: false, error: 'No active tab' });
+        if (chrome.runtime.lastError || !tab || !tab.url) {
+          sendResponse({ success: false, error: 'No active tab or tab closed' });
+          return;
         }
+        await analyzeTab(tab.id, tab);
+        const result = await chrome.storage.local.get([tab.id.toString()]);
+        sendResponse({ success: true, data: result[tab.id.toString()] });
       });
     })();
     return true;
@@ -457,6 +458,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 async function appendHistory(entry) {
   return new Promise(resolve => {
     chrome.storage.local.get([HISTORY_KEY], (result) => {
+      if (chrome.runtime.lastError) return resolve();
       const items = result[HISTORY_KEY] || [];
       if (items.length > 0 && items[0].url === entry.url) {
         items[0] = entry; // update in place
@@ -464,20 +466,34 @@ async function appendHistory(entry) {
         items.unshift(entry);
       }
       const trimmed = items.slice(0, MAX_HISTORY);
-      chrome.storage.local.set({ [HISTORY_KEY]: trimmed }, resolve);
+      chrome.storage.local.set({ [HISTORY_KEY]: trimmed }, () => {
+        void chrome.runtime.lastError;
+        resolve();
+      });
     });
   });
 }
 
 // ── CLEANUP ───────────────────────────────────────────────────
 chrome.tabs.onRemoved.addListener((tabId) => {
-  chrome.storage.local.remove(tabId.toString());
+  try {
+    chrome.storage.local.remove(tabId.toString(), () => {
+      void chrome.runtime.lastError;
+    });
+  } catch (_) {}
 });
 
 // ── UTILS ─────────────────────────────────────────────────────
 function setBadge(tabId, text, color) {
-  chrome.action.setBadgeText({ text, tabId });
-  chrome.action.setBadgeBackgroundColor({ color, tabId });
+  if (!tabId) return;
+  try {
+    chrome.action.setBadgeText({ text, tabId: Number(tabId) }, () => {
+      void chrome.runtime.lastError;
+    });
+    chrome.action.setBadgeBackgroundColor({ color, tabId: Number(tabId) }, () => {
+      void chrome.runtime.lastError;
+    });
+  } catch (_) {}
 }
 
 function sleep(ms) {
