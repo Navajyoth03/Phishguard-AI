@@ -259,8 +259,8 @@ async function analyzeTab(tabId, tab) {
   // Cross-Origin / Screen Capture Fallback (e.g. YouTube, iframes, external CDNs)
   if (domFeatures.has_video && videoFrames.length === 0 && tab.windowId) {
     try {
-      for (let i = 0; i < 8; i++) {
-        const tabCap = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 60 });
+      for (let i = 0; i < 4; i++) {
+        const tabCap = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 50 });
         if (tabCap && tabCap.includes(',')) {
           videoFrames.push(tabCap.split(',')[1]);
         }

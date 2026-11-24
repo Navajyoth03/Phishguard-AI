@@ -1025,10 +1025,13 @@ def analyze_video(url: str, text: str, dom_features: dict = None, video_frames: 
                 img_data = base64.b64decode(b64)
                 im = Image.open(io.BytesIO(img_data))
 
-                # If bounding box is provided (e.g. YouTube tab capture), crop to video player
-                if video_crop and isinstance(video_crop, dict) and video_crop.get('width', 0) > 20:
+                # If bounding box is provided (e.g. YouTube tab capture), crop to video player.
+                # ONLY crop if the image is actually a full tab/screen screenshot (width >= 500),
+                # NEVER crop when it was already captured directly from canvas at 320x240!
+                img_w, img_h = im.size
+                if (video_crop and isinstance(video_crop, dict) and 
+                    video_crop.get('width', 0) > 20 and img_w >= 500):
                     try:
-                        img_w, img_h = im.size
                         win_w = float(video_crop.get('windowWidth') or img_w)
                         win_h = float(video_crop.get('windowHeight') or img_h)
                         scale_x = img_w / win_w if win_w > 0 else 1.0

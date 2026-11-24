@@ -123,6 +123,16 @@ document.addEventListener('DOMContentLoaded', () => {
     // Synchronize initial server backend status
     syncBackendStatus();
 
+    // Check if internal browser page
+    if (!tab.url || tab.url.startsWith('chrome://') || tab.url.startsWith('edge://') || tab.url.startsWith('about:')) {
+      setStatus('online', 'Browser Internal');
+      setText('riskLabel', 'INTERNAL PAGE');
+      setText('riskAction', 'Browser internal page — no external network risk.');
+      setText('geminiText', 'Internal browser management and settings pages are secured by the browser sandbox.');
+      setGaugeScore(0, '#10B981');
+      return;
+    }
+
     // Look up stored analysis for this tab
     chrome.storage.local.get([tab.id.toString()], (result) => {
       const data = result[tab.id.toString()];
@@ -136,18 +146,20 @@ document.addEventListener('DOMContentLoaded', () => {
       } else {
         // Tab not analyzed yet - check file:// permission or trigger immediately
         if (tab.url && tab.url.startsWith('file://')) {
-          if (chrome.extension.isAllowedFileSchemeAccess) {
-            chrome.extension.isAllowedFileSchemeAccess((isAllowed) => {
-              if (!isAllowed) {
-                setStatus('busy', 'Permission Needed');
-                renderFilePermissionNotice();
-                return;
-              }
-              triggerActiveTabAnalysis(tab);
-            });
-          } else {
-            triggerActiveTabAnalysis(tab);
-          }
+          try {
+            if (typeof chrome !== 'undefined' && chrome.extension && typeof chrome.extension.isAllowedFileSchemeAccess === 'function') {
+              chrome.extension.isAllowedFileSchemeAccess((isAllowed) => {
+                if (!isAllowed) {
+                  setStatus('busy', 'Permission Needed');
+                  renderFilePermissionNotice();
+                  return;
+                }
+                triggerActiveTabAnalysis(tab);
+              });
+              return;
+            }
+          } catch (_) {}
+          triggerActiveTabAnalysis(tab);
         } else {
           triggerActiveTabAnalysis(tab);
         }
