@@ -124,6 +124,7 @@ async function analyzeTab(tabId, tab) {
   let pageText = '';
   let domFeatures = {};
   let videoFrames = [];
+  let videoCrop = null;
 
   try {
     const res = await chrome.scripting.executeScript({
@@ -245,7 +246,6 @@ async function analyzeTab(tabId, tab) {
       },
     });
 
-    let videoCrop = null;
     if (res?.[0]?.result) {
       pageText = res[0].result.text;
       domFeatures = res[0].result.features;
