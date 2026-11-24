@@ -333,9 +333,40 @@ async function analyzeTab(tabId, tab) {
 
   console.log(`[PhishGuard] [${data._backend?.active?.toUpperCase()}] ${tab.url.substring(0, 60)} → ${(score * 100).toFixed(0)}% ${data.risk_level}`);
 
-  // Inject Warning Overlay if risk is elevated
+  // Inject Warning Overlay ONLY for confirmed multi-modal critical threats
+  // NEVER show full-screen blocking overlay on trusted sites or if only ONE model has high risk!
+  let host = '';
+  try { host = (new URL(tab.url || 'http://localhost')).hostname.toLowerCase(); } catch (_) {}
+
+  const TRUSTED_PLATFORMS = [
+    'youtube.com', 'google.com', 'google.co.in', 'wikipedia.org', 'wikimedia.org',
+    'github.com', 'reddit.com', 'twitter.com', 'x.com', 'linkedin.com', 'instagram.com',
+    'netflix.com', 'amazon.com', 'amazon.in', 'microsoft.com', 'apple.com',
+    'stackoverflow.com', 'medium.com', 'spotify.com', 'hotstar.com', 'twitch.tv',
+    'vimeo.com', 'huggingface.co', 'claude.ai', 'chatgpt.com', 'openai.com',
+    'perplexity.ai', 'cursor.com', 'coursera.org'
+  ];
+  const isTrustedPlatform = TRUSTED_PLATFORMS.some(d => host === d || host.endsWith('.' + d));
+  const isEducationalOrGov = /(\.edu|\.gov|\.mil|\.ac\.in|\.edu\.in|\.ac\.uk|\.edu\.au)$/i.test(host);
+
+  // Count how many distinct models flagged high danger (risk >= 0.70)
+  const risks = data.individual_risks || {};
+  const dangerousModelsCount = Object.keys(risks).filter(k => risks[k] >= 0.70).length;
+
   const isVideoHighRisk = (data.modalities && data.modalities.video && data.modalities.video.risk_score >= 0.70);
-  if (score >= 0.50 || isVideoHighRisk) {
+  const isConfirmedDeepfakeExploit = (isVideoHighRisk && (data.video_indicators?.length >= 2 || data.is_deepfake));
+  const hasMultiModalAgreement = (dangerousModelsCount >= 2);
+
+  // Overlay triggers ONLY if:
+  // 1. NOT a trusted public platform or educational/government domain
+  // 2. AND requires MULTI-MODAL agreement (at least 2 independent models >= 70% and overall score >= 85%)
+  //    OR a verified multi-indicator deepfake exploit
+  const shouldShowOverlay = !isTrustedPlatform && !isEducationalOrGov && (
+    (score >= 0.85 && hasMultiModalAgreement) ||
+    isConfirmedDeepfakeExploit
+  );
+
+  if (shouldShowOverlay) {
     chrome.scripting.executeScript({
       target: { tabId },
       func: (riskScore, explanation, backendName) => {

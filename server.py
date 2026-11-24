@@ -222,24 +222,62 @@ class ModelManager:
 
 # ─── Shared vocabulary (mirrors train_models.py) ─────────────────────────────
 LEGIT_DOMAINS = {
-    "google.com","gmail.com","youtube.com","facebook.com","twitter.com",
-    "linkedin.com","github.com","stackoverflow.com","wikipedia.org","amazon.com",
-    "microsoft.com","apple.com","netflix.com","instagram.com","reddit.com",
-    "discord.com","spotify.com","zoom.us","adobe.com","dropbox.com",
-    "stripe.com","shopify.com","twitch.tv","medium.com","vercel.com",
-    "flipkart.com","amazon.in","myntra.com","bigbasket.com","swiggy.com",
-    "zomato.com","paytm.com","phonepe.com","razorpay.com","freshworks.com",
-    "zoho.com","irctc.co.in","sbi.co.in","hdfcbank.com","icicibank.com",
-    "axisbank.com","india.gov.in","ndtv.com","thehindu.com","makemytrip.com",
-    "bookmyshow.com","naukri.com","ola.com","meesho.com","zerodha.com",
-    "groww.in","policybazaar.com","practo.com","1mg.com","netmeds.com",
-    "iitb.ac.in","iitd.ac.in","iitm.ac.in","iisc.ac.in","nptel.ac.in",
+    # Search, Cloud & Major Tech
+    "google.com","gmail.com","youtube.com","facebook.com","twitter.com","x.com",
+    "linkedin.com","github.com","github.io","gitlab.com","gitlab.io","stackoverflow.com",
+    "wikipedia.org","wikimedia.org","amazon.com","microsoft.com","apple.com","netflix.com",
+    "instagram.com","reddit.com","discord.com","spotify.com","zoom.us","adobe.com","dropbox.com",
+    "stripe.com","shopify.com","twitch.tv","medium.com","vercel.com","vercel.app","netlify.app",
+    "render.com","onrender.com","supabase.com","cloudflare.com","digitalocean.com",
+    "aws.amazon.com","azure.com","pypi.org","npmjs.com","docker.com","postman.com",
+    # Modern AI & ML Ecosystem
+    "openai.com","chatgpt.com","claude.ai","anthropic.com","perplexity.ai","cursor.com",
+    "cursor.sh","huggingface.co","deepmind.google","gemini.google.com","midjourney.com",
+    "replicate.com","stability.ai","elevenlabs.io","poe.com","cohere.com","mistral.ai",
+    "groq.com","v0.dev","shadcn.com","modal.com","runwayml.com","jasper.ai","copy.ai",
+    "phind.com","kaggle.com",
+    # Collaboration & Productivity
+    "notion.so","notion.site","canva.com","canva.site","figma.com","miro.com","slack.com",
+    "trello.com","asana.com","airtable.com","atlassian.net","jira.com","confluence.com",
+    "linear.app","loom.com",
+    # Indian & Global Services
+    "flipkart.com","amazon.in","myntra.com","bigbasket.com","swiggy.com","zomato.com",
+    "paytm.com","phonepe.com","razorpay.com","freshworks.com","zoho.com","irctc.co.in",
+    "sbi.co.in","hdfcbank.com","icicibank.com","axisbank.com","india.gov.in","ndtv.com",
+    "thehindu.com","makemytrip.com","bookmyshow.com","naukri.com","ola.com","meesho.com",
+    "zerodha.com","groww.in","policybazaar.com","practo.com","1mg.com","netmeds.com",
+    # Academic, Scientific & Educational
+    "arxiv.org","nature.com","science.org","sciencedirect.com","springer.com","wiley.com",
+    "mit.edu","stanford.edu","harvard.edu","ox.ac.uk","cam.ac.uk","berkeley.edu",
+    "cmu.edu","iitb.ac.in","iitd.ac.in","iitm.ac.in","iisc.ac.in","nptel.ac.in",
+    "coursera.org","edx.org","udemy.com","khanacademy.org",
     "byjus.com","unacademy.com","vedantu.com","timesofindia.indiatimes.com",
     "economictimes.indiatimes.com","hindustantimes.com","livemint.com",
     # Streaming & Media
     "hotstar.com","disneyplus.com","jiocinema.com","primevideo.com",
     "sonyliv.com","zee5.com","vimeo.com","dailymotion.com",
 }
+
+TRUSTED_TLD_SUFFIXES = (
+    '.edu', '.gov', '.mil', '.ac.in', '.edu.in', '.ac.uk', '.edu.au',
+    '.nic.in', '.gov.in'
+)
+
+def is_trusted_domain(host: str) -> bool:
+    """Returns True if host is an accredited institutional/educational/gov domain or verified global platform."""
+    if not host:
+        return False
+    host = host.lower()
+    parts = host.replace("www.", "").split(".")
+    root = '.'.join(parts[-2:]) if len(parts) >= 2 else host
+    
+    if root in LEGIT_DOMAINS or host in LEGIT_DOMAINS:
+        return True
+        
+    if any(host.endswith(sfx) for sfx in TRUSTED_TLD_SUFFIXES):
+        return True
+        
+    return False
 
 SUSP_TLD_SET = {'.tk','.ml','.ga','.cf','.xyz','.club','.online','.site',
                '.website','.space','.top','.click','.download','.review',
@@ -629,13 +667,26 @@ def analyze_url(url: str) -> dict:
             risk = float(proba[1])
 
             # Apply legitimacy correction
+            # Apply legitimacy & clean-profile correction
             try:
                 p = urlparse(url)
                 host = (p.hostname or "").lower()
-                parts = host.replace("www.", "").split(".")
-                root = '.'.join(parts[-2:]) if len(parts) >= 2 else host
-                if root in LEGIT_DOMAINS:
-                    risk = max(risk * 0.25, 0.02)
+                
+                # 1. Verified Institutional, Educational, Government, or Whitelisted Platforms
+                if is_trusted_domain(host):
+                    risk = min(risk * 0.05, 0.03)
+                # 2. Structurally pristine URLs on normal modern domains (.ai, .io, .dev, .com, .org, etc.)
+                elif (p.scheme == 'https' and 
+                      not feat.get('has_susp_tld') and 
+                      not feat.get('has_ip') and 
+                      not feat.get('is_typosquat') and 
+                      not feat.get('has_homoglyph') and 
+                      feat.get('num_susp_kw', 0) == 0 and 
+                      feat.get('brand_host_imperson', 0) == 0 and 
+                      feat.get('is_shortened', 0) == 0 and
+                      feat.get('subdomain_count', 0) <= 2):
+                    # No red flags whatsoever: calibrate the out-of-vocabulary RF score
+                    risk = min(risk, 0.12)
             except Exception:
                 pass
 
@@ -668,13 +719,33 @@ def analyze_url(url: str) -> dict:
     return _rule_url(url)
 
 
-def analyze_text(text: str) -> dict:
+def analyze_text(text: str, url: str = None) -> dict:
     """Text analysis — uses trained TF-IDF+LR model with Johnson-Lindenstrauss 64-D embedding."""
+    if not text or len(text.strip()) < 10:
+        emb = np.zeros(64, dtype=np.float64)
+        return {'risk_score': 0.04, 'confidence': 0.05, 'embedding': emb,
+                'indicators': [], 'method': 'neutral'}
+
+    # If browsing trusted knowledge, search, or streaming media platforms,
+    # the text contains user search queries, video titles, or encyclopedia entries.
+    is_trusted_media = False
+    if url:
+        try:
+            h = (urlparse(url).hostname or "").lower()
+            if is_trusted_domain(h):
+                is_trusted_media = True
+        except Exception:
+            pass
+
     if models.text_trained:
         try:
             X = models.text_vectorizer.transform([text])
             proba = models.text_classifier.predict_proba(X)[0]
             risk = float(proba[1])
+
+            if is_trusted_media:
+                # Text contains user query or benign platform text
+                risk = min(risk, 0.25)
 
             # Deterministic Johnson-Lindenstrauss projection from TF-IDF sparse space into 64D
             dense = np.array(X.todense()).flatten()
@@ -1238,7 +1309,7 @@ def analyze():
     print(f"\n  Analyzing: {url[:70]}{'...' if len(url)>70 else ''}")
 
     u_res   = analyze_url(url)
-    t_res   = analyze_text(text)
+    t_res   = analyze_text(text, url)
     img_res = analyze_image(url, dom_features)
     aud_res = analyze_audio(url, text, dom_features)
     vid_res = analyze_video(url, text, dom_features, video_frames)
@@ -1250,7 +1321,9 @@ def analyze():
     print(f"  Vid  [{vid_res['method']:16}]: {vid_res['risk_score']:.2%}")
 
     # Multi-modal fusion with genuine 64-D mathematical embeddings
-    active_modalities = {'url': u_res, 'text': t_res}
+    active_modalities = {'url': u_res}
+    if text and len(text.strip()) >= 10:
+        active_modalities['text'] = t_res
     if dom_features.get('has_video') or vid_res.get('risk_score', 0) > 0.35:
         active_modalities['video'] = vid_res
     if dom_features.get('has_audio') or aud_res.get('risk_score', 0) > 0.35:
