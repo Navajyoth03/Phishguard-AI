@@ -313,6 +313,26 @@ async function analyzeTab(tabId, tab, liveVideoFrames = null, playerRect = null)
 
   if (data.status === 'ignored') return;
 
+  // Retain Peak Video Threat across continuous playback throughout the video
+  if (liveVideoFrames && liveVideoFrames.length > 0) {
+    const existing = await chrome.storage.local.get([tabId.toString()]);
+    const old = existing[tabId.toString()];
+    if (old && old.individual_risks?.video) {
+      const prevVideoRisk = old.individual_risks.video || 0;
+      const currentVideoRisk = data.individual_risks?.video || 0;
+      if (prevVideoRisk > currentVideoRisk) {
+        data.individual_risks.video = prevVideoRisk;
+        if (old.final_risk_score > data.final_risk_score) {
+          data.final_risk_score = old.final_risk_score;
+          data.risk_level = old.risk_level;
+        }
+        if (old.video_indicators && old.video_indicators.length > 0) {
+          data.video_indicators = Array.from(new Set([...old.video_indicators, ...(data.video_indicators || [])]));
+        }
+      }
+    }
+  }
+
   // Save per-tab result for popup
   await chrome.storage.local.set({ [tabId.toString()]: data });
 
@@ -461,12 +481,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     (async () => {
       try {
         const frames = [];
-        for (let i = 0; i < 4; i++) {
+        for (let i = 0; i < 6; i++) {
           const tabCap = await chrome.tabs.captureVisibleTab(windowId, { format: 'jpeg', quality: 50 });
           if (tabCap && tabCap.includes(',')) {
             frames.push(tabCap.split(',')[1]);
           }
-          await sleep(150);
+          await sleep(120);
         }
         if (frames.length >= 2) {
           chrome.tabs.get(tabId, async (tab) => {

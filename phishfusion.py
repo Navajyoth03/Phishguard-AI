@@ -167,22 +167,24 @@ class FusionEngine:
             asymmetric_risk = weighted_avg_risk
 
         # 4. CROSS-MODAL ANOMALY / TROJAN HORSE OVERRIDE
-        # Scenario: A clean or whitelisted URL (e.g. sites.google.com, notion.site, canva.site)
-        # harboring an active credential harvesting payload in Visual DOM, Audio scam, or Deepfake
+        # Scenario: A clean or whitelisted URL (e.g. youtube.com, sites.google.com, notion.site)
+        # harboring an active credential harvesting payload in Visual DOM, Audio scam, or Deepfake video
         url_risk = individual_risks.get('url', 0.5)
-        # Text alone on a clean domain is never a trojan horse (could be search results, blogs, or video titles)
         payload_modalities = [m for m in ['image', 'audio', 'video'] if m in individual_risks]
         max_payload_risk = max([individual_risks[m] for m in payload_modalities] or [0.0])
         max_payload_mod = max(payload_modalities, key=lambda m: individual_risks[m]) if payload_modalities else None
 
         trojan_horse_detected = False
-        if url_risk <= 0.20 and max_payload_risk >= 0.75:
+        is_deepfake_threat = (multi_modal_inputs.get('video', {}).get('is_deepfake', False) or individual_risks.get('video', 0) >= 0.50)
+
+        if url_risk <= 0.20 and (max_payload_risk >= 0.65 or is_deepfake_threat):
             trojan_horse_detected = True
-            # Hard security override: guarantee CRITICAL verdict
-            asymmetric_risk = max(asymmetric_risk, 0.82)
+            # Active deepfake or malicious payload hosted on a clean/trusted domain (e.g. YouTube deepfake)
+            target_risk = max(max_payload_risk, 0.78)
+            asymmetric_risk = max(asymmetric_risk, target_risk)
             flags.append(
-                f"🚨 Trojan Horse Discrepancy: Clean/Whitelisted host URL ({url_risk:.1%}) "
-                f"harboring high-risk payload in {max_payload_mod.upper()} ({max_payload_risk:.1%})."
+                f"🚨 Synthetic / Deepfake Payload Detected on Platform: Clean host URL ({url_risk:.1%}) "
+                f"harboring detected deepfake video in {max_payload_mod.upper()} ({max_payload_risk:.1%})."
             )
 
         # 5. BENIGN CONSENSUS DAMPENING

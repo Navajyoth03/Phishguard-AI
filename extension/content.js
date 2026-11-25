@@ -1,48 +1,65 @@
-// PhishGuard content.js - Automatic Active Video Playback Detection & Live Extraction
+// PhishGuard content.js - Continuous Live Video Monitoring & Periodic Extraction
 'use strict';
 
 (function () {
-  let playDebounce = 0;
+  let activeVideoEl = null;
+  let monitorInterval = null;
 
-  function onVideoPlaying(videoEl) {
-    if (!videoEl || videoEl.paused || videoEl.ended) return;
+  function sendVideoCrop(videoEl) {
+    if (!videoEl || videoEl.paused || videoEl.ended || videoEl.readyState < 2) return;
+    const rect = videoEl.getBoundingClientRect();
+    if (rect.width < 120 || rect.height < 90) return;
 
-    // Give playback ~1.5s to get past initial black frames/buffering spinners
+    chrome.runtime.sendMessage({
+      action: 'videoPlaybackStarted',
+      rect: {
+        x: Math.max(0, rect.left),
+        y: Math.max(0, rect.top),
+        width: rect.width,
+        height: rect.height,
+        viewport_width: window.innerWidth,
+        viewport_height: window.innerHeight
+      }
+    });
+  }
+
+  function startMonitoring(videoEl) {
+    activeVideoEl = videoEl;
+    if (monitorInterval) clearInterval(monitorInterval);
+
+    // Initial check ~1.2s after play starts (past black screen/spinner)
     setTimeout(() => {
-      if (videoEl.paused || videoEl.ended) return;
-      if (Date.now() - playDebounce < 8000) return; // Debounce scans to once per 8 seconds
-      playDebounce = Date.now();
+      sendVideoCrop(videoEl);
+    }, 1200);
 
-      const rect = videoEl.getBoundingClientRect();
-      // Ensure player is visible and has significant size (not a 1x1 tracking pixel)
-      if (rect.width < 120 || rect.height < 90) return;
-
-      console.log('[PhishGuard] Live video playback detected! Initiating forensic stream scan...');
-      chrome.runtime.sendMessage({
-        action: 'videoPlaybackStarted',
-        rect: {
-          x: Math.max(0, rect.left),
-          y: Math.max(0, rect.top),
-          width: rect.width,
-          height: rect.height,
-          viewport_width: window.innerWidth,
-          viewport_height: window.innerHeight
-        }
-      });
-    }, 1500);
+    // Continuous checking: checks throughout playback every 5 seconds
+    monitorInterval = setInterval(() => {
+      if (activeVideoEl && !activeVideoEl.paused && !activeVideoEl.ended) {
+        sendVideoCrop(activeVideoEl);
+      } else if (!activeVideoEl || activeVideoEl.paused || activeVideoEl.ended) {
+        clearInterval(monitorInterval);
+        monitorInterval = null;
+      }
+    }, 5000);
   }
 
   // Use capture phase on document to catch 'play' and 'playing' events
-  // works across all dynamically injected videos, SPAs (YouTube, Vimeo, etc.)
   document.addEventListener('play', (e) => {
     if (e.target && e.target.tagName === 'VIDEO') {
-      onVideoPlaying(e.target);
+      startMonitoring(e.target);
     }
   }, true);
 
   document.addEventListener('playing', (e) => {
     if (e.target && e.target.tagName === 'VIDEO') {
-      onVideoPlaying(e.target);
+      startMonitoring(e.target);
+    }
+  }, true);
+
+  document.addEventListener('pause', (e) => {
+    if (e.target === activeVideoEl && monitorInterval) {
+      clearInterval(monitorInterval);
+      monitorInterval = null;
     }
   }, true);
 })();

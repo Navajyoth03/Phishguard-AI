@@ -176,7 +176,9 @@ def analyze_numpy_frames(frames):
 
     # Multi-anomaly boost
     if len(flags) >= 2:
-        risk_score = max(risk_score, 0.78)
+        risk_score = max(risk_score, 0.85)
+    elif len(flags) == 1:
+        risk_score = max(risk_score, 0.72)
 
     # Clean authentic baseline: ONLY dampen when NO fake anomalies were flagged
     if not flags:
