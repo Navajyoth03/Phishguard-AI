@@ -114,6 +114,16 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     const imgUrl = info.srcUrl;
     if (!imgUrl) return;
 
+    // 1. Notify content script to display the loading HUD directly on the page
+    if (tab && tab.id) {
+      try {
+        chrome.tabs.sendMessage(tab.id, {
+          action: 'showImageForensicsToast',
+          status: 'loading'
+        });
+      } catch (e) {}
+    }
+
     try {
       const backend = await resolveActiveBackend();
       const res = await fetch(`${backend.url}/analyze_image_file`, {
@@ -127,7 +137,10 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       }
 
       const data = await res.json();
-      await chrome.storage.local.set({ 'phishguard_last_image_result': data });
+      await chrome.storage.local.set({
+        'phishguard_last_image_result': data,
+        'phishguard_last_image_time': Date.now()
+      });
 
       const pct = Math.round((data.risk_score || 0) * 100);
       const isTampered = data.is_tampered;
@@ -136,6 +149,24 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         ? (data.indicators && data.indicators[0] ? data.indicators[0] : 'Manipulated image elements detected.')
         : 'Uniform optical sensor noise and authentic compression verified.';
 
+      // 2. Send completed forensic results to the on-page HUD
+      if (tab && tab.id) {
+        try {
+          chrome.tabs.sendMessage(tab.id, {
+            action: 'showImageForensicsToast',
+            status: 'done',
+            data: data
+          });
+        } catch (e) {}
+
+        // Update badge on active tab
+        chrome.action.setBadgeText({ tabId: tab.id, text: `${pct}%` });
+        chrome.action.setBadgeBackgroundColor({
+          tabId: tab.id,
+          color: isTampered ? '#EF4444' : '#10B981'
+        });
+      }
+
       try {
         chrome.notifications.create({
           type: 'basic',
@@ -143,20 +174,19 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
           title: title,
           message: message
         });
-      } catch (e) {
-        console.log('[PhishGuard] Notification skipped:', e);
-      }
+      } catch (e) {}
 
-      // Update badge on active tab
-      if (tab && tab.id) {
-        chrome.action.setBadgeText({ tabId: tab.id, text: `${pct}%` });
-        chrome.action.setBadgeBackgroundColor({
-          tabId: tab.id,
-          color: isTampered ? '#EF4444' : '#10B981'
-        });
-      }
     } catch (err) {
       console.error('[PhishGuard] Context menu image analysis failed:', err);
+      if (tab && tab.id) {
+        try {
+          chrome.tabs.sendMessage(tab.id, {
+            action: 'showImageForensicsToast',
+            status: 'error',
+            message: `Could not analyze image (${err.message}). Check server status in extension popup.`
+          });
+        } catch (e) {}
+      }
     }
   }
 });

@@ -627,10 +627,15 @@ function initImageForensics() {
   }
 
   // Check if background script inspected an image via context menu
-  chrome.storage.local.get(['phishguard_last_image_result'], (res) => {
+  chrome.storage.local.get(['phishguard_last_image_result', 'phishguard_last_image_time'], (res) => {
     if (res && res.phishguard_last_image_result) {
       const data = res.phishguard_last_image_result;
       renderImageResult(data);
+      // Auto-switch to image tab if inspected recently (< 10 minutes ago)
+      const elapsed = Date.now() - (res.phishguard_last_image_time || 0);
+      if (elapsed < 10 * 60 * 1000) {
+        switchTab('image');
+      }
     }
   });
 }
