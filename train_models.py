@@ -680,8 +680,8 @@ def train_text_model(texts=None, labels=None):
     vectorizer = TfidfVectorizer(
         max_features=15_000,
         ngram_range=(1, 2),       # unigrams + bigrams
-        min_df=2,
-        max_df=0.95,
+        min_df=3,
+        max_df=0.90,
         sublinear_tf=True,
         strip_accents='unicode',
         analyzer='word',
@@ -691,13 +691,19 @@ def train_text_model(texts=None, labels=None):
     X_test  = vectorizer.transform(X_test_raw)
     print(f"     Vocabulary size: {len(vectorizer.vocabulary_):,}")
 
-    print(f"\n[3/4] Training Logistic Regression classifier...")
-    classifier = LogisticRegression(
-        C=5.0,
+    print(f"\n[3/4] Training Calibrated Logistic Regression classifier...")
+    from sklearn.calibration import CalibratedClassifierCV
+    base_classifier = LogisticRegression(
+        C=1.0,
         max_iter=1000,
         class_weight='balanced',
         solver='lbfgs',
         random_state=RANDOM_STATE,
+    )
+    classifier = CalibratedClassifierCV(
+        estimator=base_classifier,
+        method='sigmoid',
+        cv=5
     )
     t1 = time.time()
     classifier.fit(X_train, y_train)

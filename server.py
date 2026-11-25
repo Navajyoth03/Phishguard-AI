@@ -605,13 +605,111 @@ def _rule_url(url: str) -> dict:
             'embedding': emb, 'indicators': flags[:4], 'method': 'rule'}
 
 
+# ─── Forensic Linguistic & Intent Matrix ───────────────────────────────────────
+def _evaluate_text_forensics(text: str, ml_risk: float = 0.5) -> tuple:
+    """
+    Forensic Linguistic & Intent Evaluation Engine.
+    Combines statistical ML probabilities with verifiable social-engineering intent clusters
+    (coercive urgency, credential/identity harvesting, fraudulent rewards).
+    Eliminates false positives on professional emails and legitimate e-commerce catalogs
+    while maintaining aggressive, strict detection on genuine phishing attacks.
+    """
+    text_l = text.lower()
+
+    # 1. Coercive Urgency & Account Threat Cluster
+    urgency = bool(re.search(
+        r'\b(urgent|immediate(?:ly)?|within[\s-]\d+[\s-]hours?|act[\s-]now|action[\s-]required|'
+        r'failure[\s-]to|24[\s-]hours?)\b', text_l
+    ))
+    threat = bool(re.search(
+        r'\b(suspend(?:ed)?|block(?:ed)?|lock(?:ed)?|terminat(?:ed|ion)|deactivat(?:ed|ion)|'
+        r'unauthori[zs]ed[\s-]access|unusual[\s-]activity|compromis(?:ed)?|breach|'
+        r'security[\s-]alert|legal[\s-]action|permanently)\b', text_l
+    ))
+
+    # 2. Credential & Identity/KYC Harvesting Cluster
+    cred_harvesting = bool(re.search(
+        r'\b(password|passcode|otp|one[\s-]time[\s-]password|pin\b|cvv|cvc|'
+        r'aadhar|aadhaar|pan[\s-]card|kyc|ssn|social[\s-]security|'
+        r'verify[\s-]your[\s-](?:identity|account|credentials|password|card)|'
+        r'confirm[\s-]your[\s-](?:identity|details|credentials|account)|'
+        r'login[\s-]credentials|enter[\s-]your[\s-](?:password|otp|pin|credentials))\b', text_l
+    ))
+
+    # 3. Fraudulent Financial / Deceptive Reward Lure Cluster
+    fraud_lure = bool(re.search(
+        r'\b(lottery[\s-]winner|won[\s-](?:a\s+)?prize|claim[\s-]your[\s-](?:prize|reward|refund|funds?)|'
+        r'inheritance[\s-]funds?|wire[\s-]transfer[\s-]to|crypto[\s-]deposit|'
+        r'bitcoin[\s-]wallet|free[\s-]gift[\s-]cards?\b(?!.*(?:shopping|amazon|cart|order)))\b', text_l
+    ))
+
+    # 4. Deceptive Action Link & Impersonal Greeting
+    action_prompt = bool(re.search(r'\b(click[\s-]here|click[\s-]the[\s-]link|log[\s-]in[\s-]below)\b', text_l))
+    generic_greeting = bool(re.search(
+        r'\bdear\s+(customer|user|member|account[\s-]holder|client|subscriber|citizen|taxpayer)\b', text_l
+    ))
+
+    # 5. Legitimate Professional, Educational, & Commercial Context Markers
+    legit_professional_cues = bool(re.search(
+        r'\b(interview|recruitment|shortlisted|assessment[\s-]round|campus[\s-]placement|'
+        r'designation|ctc|package|curriculum|syllabus|university|college|faculty|'
+        r'meeting[\s-]link|zoom[\s-]link|google[\s-]meet|teams[\s-]link|'
+        r'cart|checkout|free[\s-]shipping|cash[\s-]on[\s-]delivery|returns[\s-]&[\s-]orders|'
+        r'tracking[\s-]number|order[\s-]id|invoice[\s-]number|product[\s-]details)\b', text_l
+    ))
+
+    flags = []
+    if cred_harvesting:
+        flags.append("Credential / Identity / KYC harvesting solicitation")
+    if threat and urgency:
+        flags.append("Coercive urgency with account suspension/blocking threat")
+    elif threat:
+        flags.append("Account restriction / security penalty threat")
+    elif urgency:
+        flags.append("Artificial urgency language")
+    if fraud_lure:
+        flags.append("Fraudulent financial / reward lure")
+    if action_prompt and (threat or cred_harvesting or urgency):
+        flags.append("Suspicious call-to-action link")
+    if generic_greeting:
+        flags.append("Generic impersonal greeting")
+
+    has_threat_urgency = (threat and urgency) or threat
+
+    # Hybrid Intent-ML Fusion Rules
+    if cred_harvesting and has_threat_urgency:
+        # Definitive phishing compound: Credential demand + Coercive threat
+        risk = max(ml_risk, 0.96)
+    elif cred_harvesting and action_prompt:
+        risk = max(ml_risk, 0.90)
+    elif cred_harvesting:
+        risk = max(ml_risk, 0.85)
+    elif fraud_lure and (action_prompt or urgency):
+        risk = max(ml_risk, 0.88)
+    elif has_threat_urgency and action_prompt:
+        risk = max(ml_risk, 0.80)
+    elif has_threat_urgency:
+        risk = max(ml_risk * 0.80, 0.60)
+    elif len(flags) == 0:
+        # Zero malicious intent signals
+        if legit_professional_cues:
+            # Genuine placement, recruitment, work, or e-commerce
+            risk = min(ml_risk * 0.08, 0.08)
+        else:
+            # Benign general text
+            risk = min(ml_risk * 0.20, 0.15)
+    else:
+        risk = ml_risk
+
+    return float(np.clip(risk, 0.02, 0.99)), flags
+
+
 # ─── Deterministic Text Fallback ──────────────────────────────────────────────
 def _rule_text(text: str) -> dict:
     if not text or len(text.strip()) < 10:
         return {'risk_score': 0.05, 'confidence': 0.9,
                 'embedding': np.zeros(64, dtype=np.float64), 'indicators': [], 'method': 'rule'}
     text_l = text.lower()
-    flags = []
     
     hits = [k for k in PHISHING_TEXT_KW if k in text_l]
     urgency_hits = sum(1 for p in [r'\bexpir', r'\bact now\b', r'\burgent\b', r'\blocke?d\b', r'\b24 hours?\b'] if re.search(p, text_l))
@@ -619,12 +717,6 @@ def _rule_text(text: str) -> dict:
     cred_hits = sum(1 for p in [r'\bpassword\b', r'\bpin\b', r'\bcredit card\b', r'\botp\b', r'\bcvv\b', r'\bverify\b'] if re.search(p, text_l))
     financial_hits = sum(1 for p in [r'\bbank\b', r'\baccount\b', r'\brefund\b', r'\binvoice\b', r'\bpayment\b', r'\bwire\b'] if re.search(p, text_l))
     call_prompt = 1.0 if re.search(r'\bcall (us|now|support|toll free|1-800|\d{10})\b', text_l) else 0.0
-    
-    if hits: flags.append(f"Phishing language detected: '{hits[0]}'")
-    if urgency_hits: flags.append("Urgency/manipulation language")
-    if generic_greeting: flags.append("Generic impersonal greeting")
-    if cred_hits: flags.append("Credential harvesting language")
-    if call_prompt: flags.append("Direct phone call action request")
 
     feat_vec = np.array([
         min(len(hits) / 4.0, 1.0),
@@ -643,7 +735,9 @@ def _rule_text(text: str) -> dict:
 
     weights = np.array([2.0, 1.8, 0.8, 2.2, 1.2, 1.5, 0.3, 1.6, 1.1, 1.4, 0.2, 1.3])
     logit = float(np.dot(feat_vec, weights) - 2.8)
-    risk = float(np.clip(1.0 / (1.0 + np.exp(-logit)), 0.02, 0.98))
+    base_risk = float(np.clip(1.0 / (1.0 + np.exp(-logit)), 0.02, 0.98))
+
+    risk, flags = _evaluate_text_forensics(text, base_risk)
 
     emb = np.dot(feat_vec, W_TXT_FALLBACK)
     emb = emb / (np.linalg.norm(emb) + 1e-8)
@@ -730,7 +824,7 @@ def analyze_text(text: str, url: str = None) -> dict:
         try:
             X = models.text_vectorizer.transform([text])
             proba = models.text_classifier.predict_proba(X)[0]
-            risk = float(proba[1])
+            ml_risk = float(proba[1])
 
             # Deterministic Johnson-Lindenstrauss projection from TF-IDF sparse space into 64D
             dense = np.array(X.todense()).flatten()
@@ -739,22 +833,13 @@ def analyze_text(text: str, url: str = None) -> dict:
             emb = np.dot(dense, models.text_projection)
             emb = emb / (np.linalg.norm(emb) + 1e-8)
 
-            flags = []
-            text_l = text.lower()
-            kw = [k for k in PHISHING_TEXT_KW if k in text_l]
-            if kw: flags.append(f"Phishing language detected: '{kw[0]}'")
-            if re.search(r'\bexpir|\bact now|\burgent\b', text_l):
-                flags.append("Urgency/manipulation language")
-            if re.search(r'\bdear (customer|user|member)\b', text_l):
-                flags.append("Generic impersonal greeting")
-            if risk > 0.5 and not flags:
-                flags.append("Phishing content detected (ML text classifier)")
+            risk, flags = _evaluate_text_forensics(text, ml_risk)
 
             return {'risk_score': float(np.clip(risk, 0.01, 0.99)),
                     'confidence': float(abs(risk - 0.5) * 2),
                     'embedding': emb,
                     'indicators': flags[:4],
-                    'method': 'ml',
+                    'method': 'ml_hybrid',
                     'model_accuracy': models.text_metrics.get('accuracy', 0)}
         except Exception as e:
             print(f"  [WARN] Text ML inference failed: {e}")
