@@ -13,6 +13,8 @@ const STORAGE_KEY_ACTIVE_BACKEND = 'phishguard_active_backend';
 const HISTORY_KEY                = 'phishguard_history';
 const MAX_HISTORY                = 50;
 
+const activeTabAudioSnippets = {};
+
 // ── ENDPOINT RESOLUTION & HEALTH ──────────────────────────────
 async function getEndpoints() {
   const data = await chrome.storage.local.get([STORAGE_KEY_CUSTOM_LOCAL, STORAGE_KEY_CUSTOM_CLOUD]);
@@ -199,7 +201,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   await analyzeTab(tabId, tab);
 });
 
-async function analyzeTab(tabId, tab, liveVideoFrames = null, playerRect = null) {
+async function analyzeTab(tabId, tab, liveVideoFrames = null, playerRect = null, liveAudio = null) {
   // Give DOM a brief moment to render
   await sleep(400);
 
@@ -341,7 +343,8 @@ async function analyzeTab(tabId, tab, liveVideoFrames = null, playerRect = null)
     text: pageText,
     dom_features: domFeatures,
     video_frames: videoFrames,
-    player_rect: playerRect
+    player_rect: playerRect,
+    audio: liveAudio || activeTabAudioSnippets[tabId] || null
   };
 
   // Resolve backend and execute request with smart failover
@@ -564,6 +567,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         await analyzeTab(tab.id, tab);
         const result = await chrome.storage.local.get([tab.id.toString()]);
         sendResponse({ success: true, data: result[tab.id.toString()] });
+      });
+    })();
+    return true;
+  }
+
+  // ── AUTOMATIC LIVE AUDIO PLAYBACK SCAN ────────────────────────
+  if (request.action === 'audioPlaybackSnippet' && request.audio_base64 && sender.tab?.id) {
+    const tabId = sender.tab.id;
+    activeTabAudioSnippets[tabId] = request.audio_base64;
+    (async () => {
+      chrome.tabs.get(tabId, async (tab) => {
+        if (!chrome.runtime.lastError && tab && tab.url) {
+          await analyzeTab(tab.id, tab, null, null, request.audio_base64);
+        }
       });
     })();
     return true;

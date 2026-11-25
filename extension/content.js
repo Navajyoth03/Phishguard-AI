@@ -4,6 +4,49 @@
 (function () {
   let activeVideoEl = null;
   let monitorInterval = null;
+  let isCapturingAudio = false;
+
+  function captureAudioSnippet(videoEl) {
+    if (!videoEl || isCapturingAudio || videoEl.paused || videoEl.ended) return;
+    try {
+      if (typeof videoEl.captureStream !== 'function') return;
+      const stream = videoEl.captureStream();
+      const audioTracks = stream.getAudioTracks();
+      if (!audioTracks || audioTracks.length === 0) return;
+
+      isCapturingAudio = true;
+      const audioStream = new MediaStream(audioTracks);
+      const recorder = new MediaRecorder(audioStream);
+      const chunks = [];
+
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) chunks.push(e.data);
+      };
+
+      recorder.onstop = () => {
+        isCapturingAudio = false;
+        if (chunks.length === 0) return;
+        const blob = new Blob(chunks, { type: 'audio/webm' });
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          chrome.runtime.sendMessage({
+            action: 'audioPlaybackSnippet',
+            audio_base64: reader.result
+          }).catch(() => {});
+        };
+        reader.readAsDataURL(blob);
+      };
+
+      recorder.start();
+      setTimeout(() => {
+        if (recorder.state === 'recording') {
+          recorder.stop();
+        }
+      }, 2500);
+    } catch (err) {
+      isCapturingAudio = false;
+    }
+  }
 
   function sendVideoCrop(videoEl) {
     if (!videoEl || videoEl.paused || videoEl.ended || videoEl.readyState < 2) return;
@@ -27,15 +70,17 @@
     activeVideoEl = videoEl;
     if (monitorInterval) clearInterval(monitorInterval);
 
-    // Initial check ~1.2s after play starts (past black screen/spinner)
+    // Initial checks ~1.2s after play starts (past black screen/spinner)
     setTimeout(() => {
       sendVideoCrop(videoEl);
+      captureAudioSnippet(videoEl);
     }, 1200);
 
-    // Continuous checking: checks throughout playback every 5 seconds
+    // Continuous checking: checks video frames and live audio throughout playback every 5 seconds
     monitorInterval = setInterval(() => {
       if (activeVideoEl && !activeVideoEl.paused && !activeVideoEl.ended) {
         sendVideoCrop(activeVideoEl);
+        captureAudioSnippet(activeVideoEl);
       } else if (!activeVideoEl || activeVideoEl.paused || activeVideoEl.ended) {
         clearInterval(monitorInterval);
         monitorInterval = null;

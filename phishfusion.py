@@ -175,7 +175,12 @@ class FusionEngine:
         max_payload_mod = max(payload_modalities, key=lambda m: individual_risks[m]) if payload_modalities else None
 
         trojan_horse_detected = False
-        is_deepfake_threat = (multi_modal_inputs.get('video', {}).get('is_deepfake', False) or individual_risks.get('video', 0) >= 0.50)
+        is_deepfake_threat = (
+            multi_modal_inputs.get('video', {}).get('is_deepfake', False) or
+            multi_modal_inputs.get('audio', {}).get('is_deepfake', False) or
+            individual_risks.get('video', 0) >= 0.50 or
+            individual_risks.get('audio', 0) >= 0.60
+        )
 
         if url_risk <= 0.20 and (max_payload_risk >= 0.65 or is_deepfake_threat):
             trojan_horse_detected = True
@@ -184,7 +189,7 @@ class FusionEngine:
             asymmetric_risk = max(asymmetric_risk, target_risk)
             flags.append(
                 f"🚨 Synthetic / Deepfake Payload Detected on Platform: Clean host URL ({url_risk:.1%}) "
-                f"harboring detected deepfake video in {max_payload_mod.upper()} ({max_payload_risk:.1%})."
+                f"harboring detected deepfake payload in {max_payload_mod.upper()} ({max_payload_risk:.1%})."
             )
 
         # 5. BENIGN CONSENSUS DAMPENING

@@ -32,6 +32,7 @@ from phishfusion import FusionEngine
 import base64, io, requests
 from PIL import Image
 import image_forensics
+import audio_forensics
 
 app  = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
@@ -991,10 +992,11 @@ def analyze_image(url: str, dom_features: dict = None) -> dict:
     }
 
 
-def analyze_audio(url: str, text: str, dom_features: dict = None) -> dict:
+def analyze_audio(url: str, text: str, dom_features: dict = None, audio_bytes: bytes = None) -> dict:
     """
     Acoustic & Vishing Forensics Engine
-    Detects audio synthesis, alarming siren loops, and tech-support vishing cues.
+    Detects audio synthesis, neural vocoder deepfakes, alarming siren loops, and vishing cues.
+    Supports real-time acoustic signal processing on live audio streams from browser/YouTube.
     Outputs a deterministic 64-D acoustic embedding.
     """
     dom = dom_features or {}
@@ -1012,7 +1014,50 @@ def analyze_audio(url: str, text: str, dom_features: dict = None) -> dict:
     except Exception:
         pass
 
-    # Extract 12 Acoustic / Vishing Features
+    # 1. Real-time Acoustic Signal Forensics (when live audio stream is supplied)
+    if audio_bytes and len(audio_bytes) > 400:
+        try:
+            samples, sr = audio_forensics.load_audio_from_bytes(audio_bytes)
+            if len(samples) > sr * 0.3:
+                rep = audio_forensics.analyze_audio_forensics(samples, sr=sr, source_label="live_audio")
+                risk = float(rep['risk_score'])
+                flags = rep['indicators']
+                pitch = rep['metrics']['pitch']
+                shimmer = rep['metrics']['shimmer']
+                spec = rep['metrics']['spectral']
+
+                feat_vec = np.array([
+                    1.0,  # has_audio
+                    0.0,
+                    1.0 if spec['vocoder_cutoff_detected'] else 0.0,
+                    1.0 if rep['is_deepfake'] else 0.0,
+                    1.0,  # has_web_audio
+                    min(float(pitch['jitter_pct']) / 2.5, 1.0),
+                    min(float(shimmer['shimmer_pct']) / 10.0, 1.0),
+                    min(float(spec['spectral_flatness']) * 12.0, 1.0),
+                    1.0 if dom.get('has_video') else 0.0,
+                    0.0,
+                    1.0 if rep['is_deepfake'] else 0.0,
+                    1.0 if is_legit else 0.0
+                ], dtype=np.float64)
+
+                emb = np.dot(feat_vec, W_AUD)
+                emb = emb / (np.linalg.norm(emb) + 1e-8)
+
+                print(f"  [Live Audio Forensics] Analyzed {rep['duration_seconds']}s audio -> Deepfake Risk: {risk:.1%}")
+                return {
+                    'risk_score': risk,
+                    'confidence': float(abs(risk - 0.5) * 2),
+                    'embedding': emb,
+                    'indicators': flags[:4],
+                    'method': 'audio_signal_forensics',
+                    'is_deepfake': rep['is_deepfake'],
+                    'metrics': rep['metrics']
+                }
+        except Exception as e:
+            print(f"  [Live Audio Forensics] Audio buffer analysis error: {e}")
+
+    # Fallback to DOM / Vishing indicators when no audio stream supplied
     has_audio = 1.0 if dom.get('has_audio') else 0.0
     has_autoplay = 1.0 if dom.get('has_autoplay_audio') else 0.0
     has_alarm = 1.0 if dom.get('has_alarm_audio') else 0.0
@@ -1419,6 +1464,15 @@ def analyze():
     dom_features = data.get('dom_features', {})
     video_frames = data.get('video_frames', [])
     player_rect  = data.get('player_rect', None)
+    audio_base64 = data.get('audio') or data.get('audio_base64') or data.get('audio_snippet', None)
+    audio_bytes  = None
+    if audio_base64:
+        try:
+            if ',' in audio_base64:
+                audio_base64 = audio_base64.split(',', 1)[1]
+            audio_bytes = base64.b64decode(audio_base64)
+        except Exception:
+            pass
 
     if (not url or
         url.startswith(('chrome://','edge://','about:','chrome-extension://','moz-extension://'))):
@@ -1430,7 +1484,7 @@ def analyze():
     u_res   = analyze_url(url)
     t_res   = analyze_text(text, url)
     img_res = analyze_image(url, dom_features)
-    aud_res = analyze_audio(url, text, dom_features)
+    aud_res = analyze_audio(url, text, dom_features, audio_bytes=audio_bytes)
     vid_res = analyze_video(url, text, dom_features, video_frames, player_rect)
 
     print(f"  URL  [{u_res['method']:16}]: {u_res['risk_score']:.2%}")
@@ -1584,6 +1638,53 @@ def analyze_image_file():
         import traceback
         traceback.print_exc()
         return jsonify({"error": f"Forensic analysis failed: {str(e)}", "success": False}), 500
+
+
+@app.route('/analyze_audio_file', methods=['POST', 'OPTIONS'])
+def analyze_audio_file():
+    """
+    Forensic audio inspection endpoint.
+    Accepts:
+      - Multipart file upload: 'audio' or 'file' (mp3, wav, m4a, ogg)
+      - JSON body: { "audio": "data:audio/...;base64,...", "filename": "sample.mp3" }
+    Returns:
+      Forensic acoustic metrics (pitch, jitter, shimmer, vocoder cutoff), anomaly indicators, and deepfake risk.
+    """
+    if request.method == 'OPTIONS':
+        return '', 204
+
+    t0 = time.time()
+    audio_bytes = None
+    filename = "uploaded_audio.mp3"
+
+    try:
+        if 'audio' in request.files or 'file' in request.files:
+            file_obj = request.files.get('audio') or request.files.get('file')
+            if file_obj and file_obj.filename:
+                filename = file_obj.filename
+                audio_bytes = file_obj.read()
+        elif request.is_json or request.data:
+            data = request.get_json(silent=True) or {}
+            raw_b64 = data.get('audio') or data.get('audio_base64') or data.get('file')
+            filename = data.get('filename', 'uploaded_audio.mp3')
+            if raw_b64:
+                if ',' in raw_b64:
+                    raw_b64 = raw_b64.split(',', 1)[1]
+                audio_bytes = base64.b64decode(raw_b64)
+
+        if not audio_bytes:
+            return jsonify({"error": "No audio file or base64 payload provided.", "success": False}), 400
+
+        samples, sr = audio_forensics.load_audio_from_bytes(audio_bytes)
+        rep = audio_forensics.analyze_audio_forensics(samples, sr=sr, source_label=filename)
+        rep['latency_ms'] = round((time.time() - t0) * 1000, 1)
+        rep['success'] = True
+        return jsonify(rep)
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": f"Audio forensic analysis failed: {str(e)}", "success": False}), 500
 
 
 @app.route('/history', methods=['GET'])
