@@ -609,7 +609,7 @@ def _rule_url(url: str) -> dict:
 
 
 # ─── Forensic Linguistic & Intent Matrix ───────────────────────────────────────
-def _evaluate_text_forensics(text: str, ml_risk: float = 0.5) -> tuple:
+def _evaluate_text_forensics(text: str, ml_risk: float = 0.5, url: str = None) -> tuple:
     """
     Forensic Linguistic & Intent Evaluation Engine.
     Combines statistical ML probabilities with verifiable social-engineering intent clusters
@@ -618,6 +618,18 @@ def _evaluate_text_forensics(text: str, ml_risk: float = 0.5) -> tuple:
     while maintaining aggressive, strict detection on genuine phishing attacks.
     """
     text_l = text.lower()
+
+    # Domain context check
+    is_legit_domain = False
+    if url:
+        try:
+            p = urlparse(url)
+            host = (p.hostname or "").lower().replace("www.", "")
+            parts = host.split(".")
+            root = '.'.join(parts[-2:]) if len(parts) >= 2 else host
+            is_legit_domain = root in LEGIT_DOMAINS
+        except Exception:
+            pass
 
     # 1. Coercive Urgency & Account Threat Cluster
     urgency = bool(re.search(
@@ -658,7 +670,9 @@ def _evaluate_text_forensics(text: str, ml_risk: float = 0.5) -> tuple:
         r'designation|ctc|package|curriculum|syllabus|university|college|faculty|'
         r'meeting[\s-]link|zoom[\s-]link|google[\s-]meet|teams[\s-]link|'
         r'cart|checkout|free[\s-]shipping|cash[\s-]on[\s-]delivery|returns[\s-]&[\s-]orders|'
-        r'tracking[\s-]number|order[\s-]id|invoice[\s-]number|product[\s-]details)\b', text_l
+        r'tracking[\s-]number|order[\s-]id|invoice[\s-]number|product[\s-]details|'
+        r'compatible[\s-]devices|customer[\s-]reviews|bought[\s-]in[\s-]past[\s-]month|'
+        r'delivery[\s-]by|prime[\s-]price|headphones|electronics|shopping)\b', text_l
     ))
 
     flags = []
@@ -674,10 +688,25 @@ def _evaluate_text_forensics(text: str, ml_risk: float = 0.5) -> tuple:
         flags.append("Fraudulent financial / reward lure")
     if action_prompt and (threat or cred_harvesting or urgency):
         flags.append("Suspicious call-to-action link")
-    if generic_greeting:
+    if generic_greeting and (threat or cred_harvesting or urgency or fraud_lure):
         flags.append("Generic impersonal greeting")
 
     has_threat_urgency = (threat and urgency) or threat
+
+    # ── SAFEGUARD: Authenticated Legitimate Domains (e.g. Amazon, Google, ICICI) ──
+    if is_legit_domain and not (cred_harvesting and has_threat_urgency):
+        # On a confirmed legitimate domain without a rogue credential attack
+        risk = min(ml_risk * 0.05, 0.05)
+        return float(np.clip(risk, 0.01, 0.06)), []
+
+    # ── SAFEGUARD: Zero Malicious Intent Signals (Shopping, Catalog, News, Resume) ──
+    if not cred_harvesting and not threat and not urgency and not fraud_lure:
+        # Zero coercive or harvesting markers — completely harmless browsing
+        if legit_professional_cues:
+            risk = min(ml_risk * 0.06, 0.06)
+        else:
+            risk = min(ml_risk * 0.12, 0.10)
+        return float(np.clip(risk, 0.02, 0.10)), []
 
     # Hybrid Intent-ML Fusion Rules
     if cred_harvesting and has_threat_urgency:
@@ -694,13 +723,10 @@ def _evaluate_text_forensics(text: str, ml_risk: float = 0.5) -> tuple:
     elif has_threat_urgency:
         risk = max(ml_risk * 0.80, 0.60)
     elif len(flags) == 0:
-        # Zero malicious intent signals
         if legit_professional_cues:
-            # Genuine placement, recruitment, work, or e-commerce
-            risk = min(ml_risk * 0.08, 0.08)
+            risk = min(ml_risk * 0.06, 0.06)
         else:
-            # Benign general text
-            risk = min(ml_risk * 0.20, 0.15)
+            risk = min(ml_risk * 0.15, 0.12)
     else:
         risk = ml_risk
 
@@ -708,7 +734,7 @@ def _evaluate_text_forensics(text: str, ml_risk: float = 0.5) -> tuple:
 
 
 # ─── Deterministic Text Fallback ──────────────────────────────────────────────
-def _rule_text(text: str) -> dict:
+def _rule_text(text: str, url: str = None) -> dict:
     if not text or len(text.strip()) < 10:
         return {'risk_score': 0.05, 'confidence': 0.9,
                 'embedding': np.zeros(64, dtype=np.float64), 'indicators': [], 'method': 'rule'}
@@ -740,7 +766,7 @@ def _rule_text(text: str) -> dict:
     logit = float(np.dot(feat_vec, weights) - 2.8)
     base_risk = float(np.clip(1.0 / (1.0 + np.exp(-logit)), 0.02, 0.98))
 
-    risk, flags = _evaluate_text_forensics(text, base_risk)
+    risk, flags = _evaluate_text_forensics(text, base_risk, url=url)
 
     emb = np.dot(feat_vec, W_TXT_FALLBACK)
     emb = emb / (np.linalg.norm(emb) + 1e-8)
@@ -836,7 +862,7 @@ def analyze_text(text: str, url: str = None) -> dict:
             emb = np.dot(dense, models.text_projection)
             emb = emb / (np.linalg.norm(emb) + 1e-8)
 
-            risk, flags = _evaluate_text_forensics(text, ml_risk)
+            risk, flags = _evaluate_text_forensics(text, ml_risk, url=url)
 
             return {'risk_score': float(np.clip(risk, 0.01, 0.99)),
                     'confidence': float(abs(risk - 0.5) * 2),
@@ -846,7 +872,7 @@ def analyze_text(text: str, url: str = None) -> dict:
                     'model_accuracy': models.text_metrics.get('accuracy', 0)}
         except Exception as e:
             print(f"  [WARN] Text ML inference failed: {e}")
-    return _rule_text(text)
+    return _rule_text(text, url=url)
 
 
 def analyze_image(url: str, dom_features: dict = None) -> dict:

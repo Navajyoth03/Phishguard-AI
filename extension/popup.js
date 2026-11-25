@@ -400,8 +400,8 @@ function renderAnalysis(data) {
   const infoRow = document.getElementById('modelInfoRow');
   if (infoRow) {
     infoRow.style.display = 'flex';
-    const uMethod = data.url_method === 'ml' ? '✅ ML' : 'Rule';
-    const tMethod = data.text_method === 'ml' ? '✅ ML' : 'Rule';
+    const uMethod = (data.url_method || '').includes('ml') ? '✅ ML' : 'Rule';
+    const tMethod = (data.text_method || '').includes('ml') ? '✅ ML' : 'Rule';
     setText('urlMethodBadge', `URL: ${uMethod}`);
     setText('textMethodBadge', `Text: ${tMethod}`);
   }

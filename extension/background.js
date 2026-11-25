@@ -213,7 +213,8 @@ async function analyzeTab(tabId, tab, liveVideoFrames = null, playerRect = null)
       target: { tabId },
       func: async () => {
         try {
-          let t = document.body.innerText || document.body.textContent || '';
+          let mainEl = document.querySelector('main, [role="main"], article, #content, .content');
+          let t = (mainEl ? mainEl.innerText : '') || document.body.innerText || document.body.textContent || '';
           let textContent = t.replace(/\s+/g, ' ').trim().substring(0, 3500);
 
           let videoEl = document.querySelector('video');
