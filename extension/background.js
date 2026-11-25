@@ -105,13 +105,13 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   await analyzeTab(tabId, tab);
 });
 
-async function analyzeTab(tabId, tab) {
+async function analyzeTab(tabId, tab, liveVideoFrames = null, playerRect = null) {
   // Give DOM a brief moment to render
   await sleep(400);
 
   let pageText = '';
   let domFeatures = {};
-  let videoFrames = [];
+  let videoFrames = liveVideoFrames || [];
 
   try {
     const res = await chrome.scripting.executeScript({
@@ -245,7 +245,8 @@ async function analyzeTab(tabId, tab) {
     url: tab.url,
     text: pageText,
     dom_features: domFeatures,
-    video_frames: videoFrames
+    video_frames: videoFrames,
+    player_rect: playerRect
   };
 
   // Resolve backend and execute request with smart failover
@@ -449,6 +450,34 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         const result = await chrome.storage.local.get([tab.id.toString()]);
         sendResponse({ success: true, data: result[tab.id.toString()] });
       });
+    })();
+    return true;
+  }
+
+  // ── AUTOMATIC LIVE VIDEO PLAYBACK SCAN ────────────────────────
+  if (request.action === 'videoPlaybackStarted' && sender.tab?.id) {
+    const tabId = sender.tab.id;
+    const windowId = sender.tab.windowId;
+    (async () => {
+      try {
+        const frames = [];
+        for (let i = 0; i < 4; i++) {
+          const tabCap = await chrome.tabs.captureVisibleTab(windowId, { format: 'jpeg', quality: 50 });
+          if (tabCap && tabCap.includes(',')) {
+            frames.push(tabCap.split(',')[1]);
+          }
+          await sleep(150);
+        }
+        if (frames.length >= 2) {
+          chrome.tabs.get(tabId, async (tab) => {
+            if (chrome.runtime.lastError || !tab || !tab.url) return;
+            console.log(`[PhishGuard] Live streaming video playback re-analyzing tab ${tabId}...`);
+            await analyzeTab(tab.id, tab, frames, request.rect);
+          });
+        }
+      } catch (err) {
+        console.debug('[PhishGuard] Live video capture note:', err.message);
+      }
     })();
     return true;
   }

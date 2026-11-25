@@ -1056,11 +1056,12 @@ def analyze_audio(url: str, text: str, dom_features: dict = None) -> dict:
     }
 
 
-def analyze_video(url: str, text: str, dom_features: dict = None, video_frames: list = None) -> dict:
+def analyze_video(url: str, text: str, dom_features: dict = None, video_frames: list = None, player_rect: dict = None) -> dict:
     """
     Forensic Computer Vision & Deepfake Video Engine
     Uses Laplacian shutter blur dynamics, 2D Fast Fourier Transform (FFT) sensor noise,
     and localized facial motion differentials. Outputs a deterministic 64-D CV embedding.
+    Supports auto-cropping to the active HTML5 player coordinates on streaming platforms (YouTube, Vimeo, etc.).
     """
     dom = dom_features or {}
     url_l = (url or "").lower()
@@ -1085,7 +1086,25 @@ def analyze_video(url: str, text: str, dom_features: dict = None, video_frames: 
             decoded_frames = []
             for b64 in video_frames[:10]:
                 img_data = base64.b64decode(b64)
-                im = Image.open(io.BytesIO(img_data)).convert('L').resize((320, 240))
+                im = Image.open(io.BytesIO(img_data))
+                
+                # Auto-crop to the active HTML5 video player boundaries if supplied
+                if player_rect and player_rect.get('width', 0) > 40 and player_rect.get('height', 0) > 40:
+                    vp_w = float(player_rect.get('viewport_width') or im.width)
+                    vp_h = float(player_rect.get('viewport_height') or im.height)
+                    scale_x = im.width / max(vp_w, 1.0)
+                    scale_y = im.height / max(vp_h, 1.0)
+                    x = int(player_rect.get('x', 0) * scale_x)
+                    y = int(player_rect.get('y', 0) * scale_y)
+                    w = int(player_rect.get('width', im.width) * scale_x)
+                    h = int(player_rect.get('height', im.height) * scale_y)
+                    x1 = max(0, min(im.width - 10, x))
+                    y1 = max(0, min(im.height - 10, y))
+                    x2 = max(x1 + 10, min(im.width, x1 + w))
+                    y2 = max(y1 + 10, min(im.height, y1 + h))
+                    im = im.crop((x1, y1, x2, y2))
+
+                im = im.convert('L').resize((320, 240))
                 decoded_frames.append(np.array(im, dtype=np.float64))
 
             cv_res = test_video.analyze_numpy_frames(decoded_frames)
@@ -1370,6 +1389,7 @@ def analyze():
     text = data.get('text', '').strip()
     dom_features = data.get('dom_features', {})
     video_frames = data.get('video_frames', [])
+    player_rect  = data.get('player_rect', None)
 
     if (not url or
         url.startswith(('chrome://','edge://','about:','chrome-extension://','moz-extension://'))):
@@ -1382,7 +1402,7 @@ def analyze():
     t_res   = analyze_text(text, url)
     img_res = analyze_image(url, dom_features)
     aud_res = analyze_audio(url, text, dom_features)
-    vid_res = analyze_video(url, text, dom_features, video_frames)
+    vid_res = analyze_video(url, text, dom_features, video_frames, player_rect)
 
     print(f"  URL  [{u_res['method']:16}]: {u_res['risk_score']:.2%}")
     print(f"  Text [{t_res['method']:16}]: {t_res['risk_score']:.2%}")
@@ -1394,7 +1414,7 @@ def analyze():
     active_modalities = {'url': u_res}
     if text and len(text.strip()) >= 10:
         active_modalities['text'] = t_res
-    if dom_features.get('has_video') or vid_res.get('risk_score', 0) > 0.35:
+    if dom_features.get('has_video') or vid_res.get('risk_score', 0) > 0.25 or (video_frames and len(video_frames) >= 2):
         active_modalities['video'] = vid_res
     if dom_features.get('has_audio') or aud_res.get('risk_score', 0) > 0.35:
         active_modalities['audio'] = aud_res

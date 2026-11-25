@@ -20,6 +20,13 @@
     "default_title": "PhishGuard AI Analysis",
     "default_badge_text": ""
   },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'"
   }
