@@ -53,6 +53,9 @@
       <button class="tab-btn" id="tabSim">
         <span>🧪</span> Simulator
       </button>
+      <button class="tab-btn" id="tabImage">
+        <span>🖼️</span> Image Inspector
+      </button>
     </div>
 
     <!-- ══════════════════════════════════════════════
@@ -256,6 +259,91 @@
             <div class="sim-btn-desc">Vishing script + forged PayPal domain + Deepfake.</div>
           </div>
         </button>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════
+       TAB 4: IMAGE FORENSICS INSPECTOR
+  ══════════════════════════════════════════════════ -->
+    <div id="panelImage" class="panel">
+      <div class="sim-header">
+        <div class="card-title">🖼️ Standalone Image Forensics</div>
+        <p style="font-size: 11px; color: #94A3B8; margin-top: 5px;">
+          Detect AI generation (CIFAKE) & localized tampering / background inpainting (CASIA 2.0).
+        </p>
+      </div>
+
+      <!-- Drag & Drop Zone -->
+      <div class="image-dropzone" id="imageDropzone">
+        <div class="dropzone-icon">📁</div>
+        <div class="dropzone-title">Drop image file here</div>
+        <div class="dropzone-subtitle">or click to browse · paste with <kbd>Ctrl+V</kbd></div>
+        <input type="file" id="imageFileInput" accept="image/png,image/jpeg,image/webp" style="display:none">
+      </div>
+
+      <!-- Preview & Status -->
+      <div class="image-preview-card" id="imagePreviewCard" style="display:none">
+        <div class="image-preview-header">
+          <span class="preview-filename" id="previewFilename">image.png</span>
+          <span class="preview-dim" id="previewDimensions">--x--</span>
+        </div>
+        <div class="image-preview-body">
+          <img id="imagePreviewImg" class="preview-thumbnail" alt="Uploaded Preview">
+          <div class="image-analyzing-spinner" id="imageSpinner" style="display:none">
+            <div class="spinner-ring"></div>
+            <span>Running Forensic ELA & 2D-FFT Analysis...</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Forensic Results Card -->
+      <div class="image-result-card" id="imageResultCard" style="display:none">
+        <div class="image-result-header">
+          <div class="result-badge" id="imageResultBadge">
+            <span id="imageVerdictIcon">⚠️</span>
+            <span id="imageVerdictText">TAMPERED / AI</span>
+          </div>
+          <div class="result-risk-score" id="imageRiskScore">82% RISK</div>
+        </div>
+
+        <div class="image-classification-sub" id="imageClassification">
+          Likely Tampered / AI Modified
+        </div>
+
+        <!-- Metrics Grid -->
+        <div class="forensics-metrics-grid">
+          <div class="metric-pill">
+            <span class="metric-label">ELA Disparity</span>
+            <span class="metric-val" id="metricEla">--x</span>
+          </div>
+          <div class="metric-pill">
+            <span class="metric-label">2D-FFT Lattice</span>
+            <span class="metric-val" id="metricFft">--</span>
+          </div>
+          <div class="metric-pill">
+            <span class="metric-label">Edge Gradient</span>
+            <span class="metric-val" id="metricEdge">--x</span>
+          </div>
+          <div class="metric-pill">
+            <span class="metric-label">PRNU Noise</span>
+            <span class="metric-val" id="metricNoise">--x</span>
+          </div>
+        </div>
+
+        <!-- Indicators Checklist -->
+        <div class="image-indicators-list" id="imageIndicatorsList">
+        </div>
+
+        <!-- Heatmap Action -->
+        <div class="heatmap-section">
+          <button class="heatmap-btn" id="btnToggleHeatmap">
+            <span>🔥</span> View ELA Tampering Heatmap
+          </button>
+          <div class="heatmap-container" id="heatmapContainer" style="display:none">
+            <img id="heatmapImg" class="heatmap-display" alt="ELA Heatmap">
+            <div class="heatmap-caption">Glowing pixels indicate disparate compression error (edited regions)</div>
+          </div>
+        </div>
       </div>
     </div>
 

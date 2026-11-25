@@ -50,6 +50,11 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('tabHistory').addEventListener('click', () => switchTab('history'));
   const tabSim = document.getElementById('tabSim');
   if (tabSim) tabSim.addEventListener('click', () => switchTab('sim'));
+  const tabImage = document.getElementById('tabImage');
+  if (tabImage) tabImage.addEventListener('click', () => switchTab('image'));
+
+  // Init Image Forensics Inspector
+  initImageForensics();
 
   const btnClear = document.getElementById('clearBtn');
   if (btnClear) btnClear.addEventListener('click', clearHistory);
@@ -551,4 +556,208 @@ function setStyledText(id, value, color) {
 function escapeHTML(str) {
   return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// ── IMAGE FORENSICS ENGINE ────────────────────────────────
+function initImageForensics() {
+  const dropzone = document.getElementById('imageDropzone');
+  const fileInput = document.getElementById('imageFileInput');
+  const btnToggleHeatmap = document.getElementById('btnToggleHeatmap');
+
+  if (!dropzone || !fileInput) return;
+
+  // Click dropzone to open file dialog
+  dropzone.addEventListener('click', () => fileInput.click());
+
+  // File input change
+  fileInput.addEventListener('change', (e) => {
+    if (e.target.files && e.target.files[0]) {
+      handleImageFile(e.target.files[0]);
+    }
+  });
+
+  // Drag and drop events
+  ['dragenter', 'dragover'].forEach(eventName => {
+    dropzone.addEventListener(eventName, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dropzone.classList.add('dragover');
+    });
+  });
+
+  ['dragleave', 'drop'].forEach(eventName => {
+    dropzone.addEventListener(eventName, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dropzone.classList.remove('dragover');
+    });
+  });
+
+  dropzone.addEventListener('drop', (e) => {
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) {
+      handleImageFile(e.dataTransfer.files[0]);
+    }
+  });
+
+  // Global paste handler for Ctrl+V
+  document.addEventListener('paste', (e) => {
+    const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+    for (const item of items) {
+      if (item.kind === 'file' && item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        switchTab('image');
+        handleImageFile(file);
+        break;
+      }
+    }
+  });
+
+  // Heatmap toggle
+  if (btnToggleHeatmap) {
+    btnToggleHeatmap.addEventListener('click', () => {
+      const heatmapContainer = document.getElementById('heatmapContainer');
+      if (heatmapContainer) {
+        const isHidden = heatmapContainer.style.display === 'none';
+        heatmapContainer.style.display = isHidden ? 'block' : 'none';
+        btnToggleHeatmap.innerHTML = isHidden
+          ? '<span>🔥</span> Hide ELA Tampering Heatmap'
+          : '<span>🔥</span> View ELA Tampering Heatmap';
+      }
+    });
+  }
+
+  // Check if background script inspected an image via context menu
+  chrome.storage.local.get(['phishguard_last_image_result'], (res) => {
+    if (res && res.phishguard_last_image_result) {
+      const data = res.phishguard_last_image_result;
+      renderImageResult(data);
+    }
+  });
+}
+
+async function handleImageFile(file) {
+  if (!file) return;
+
+  const previewCard = document.getElementById('imagePreviewCard');
+  const previewImg = document.getElementById('imagePreviewImg');
+  const previewFilename = document.getElementById('previewFilename');
+  const previewDimensions = document.getElementById('previewDimensions');
+  const spinner = document.getElementById('imageSpinner');
+  const resultCard = document.getElementById('imageResultCard');
+
+  previewFilename.textContent = file.name || 'Pasted Image';
+  previewDimensions.textContent = `${(file.size / 1024).toFixed(1)} KB`;
+  previewCard.style.display = 'block';
+  spinner.style.display = 'flex';
+  resultCard.style.display = 'none';
+
+  // Read preview
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    previewImg.src = e.target.result;
+
+    try {
+      const backend = await getActiveBackendUrl();
+      const base64Data = e.target.result;
+
+      const resp = await fetch(`${backend}/analyze_image_file`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image: base64Data,
+          filename: file.name || 'image.png'
+        })
+      });
+
+      if (!resp.ok) {
+        throw new Error(`Server returned HTTP ${resp.status}`);
+      }
+
+      const data = await resp.json();
+      spinner.style.display = 'none';
+      renderImageResult(data);
+    } catch (err) {
+      spinner.style.display = 'none';
+      alert(`Forensic analysis failed: ${err.message}`);
+    }
+  };
+  reader.readAsDataURL(file);
+}
+
+function renderImageResult(data) {
+  if (!data) return;
+
+  const previewCard = document.getElementById('imagePreviewCard');
+  const previewDimensions = document.getElementById('previewDimensions');
+  const previewFilename = document.getElementById('previewFilename');
+  const resultCard = document.getElementById('imageResultCard');
+  const badge = document.getElementById('imageResultBadge');
+  const verdictIcon = document.getElementById('imageVerdictIcon');
+  const verdictText = document.getElementById('imageVerdictText');
+  const riskScore = document.getElementById('imageRiskScore');
+  const classification = document.getElementById('imageClassification');
+
+  const metricEla = document.getElementById('metricEla');
+  const metricFft = document.getElementById('metricFft');
+  const metricEdge = document.getElementById('metricEdge');
+  const metricNoise = document.getElementById('metricNoise');
+  const indicatorsList = document.getElementById('imageIndicatorsList');
+  const heatmapImg = document.getElementById('heatmapImg');
+
+  previewCard.style.display = 'block';
+  resultCard.style.display = 'block';
+
+  if (data.dimensions) previewDimensions.textContent = data.dimensions;
+  if (data.filename) previewFilename.textContent = data.filename;
+
+  const pct = Math.round((data.risk_score || 0) * 100);
+  const isTampered = data.is_tampered;
+
+  verdictIcon.textContent = isTampered ? '⚠️' : '✅';
+  verdictText.textContent = data.verdict || (isTampered ? 'TAMPERED / AI' : 'AUTHENTIC IMAGE');
+  riskScore.textContent = `${pct}% RISK`;
+
+  if (isTampered) {
+    badge.style.background = 'rgba(239, 68, 68, 0.15)';
+    badge.style.color = '#EF4444';
+    badge.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+    riskScore.style.color = '#EF4444';
+  } else {
+    badge.style.background = 'rgba(16, 185, 129, 0.15)';
+    badge.style.color = '#10B981';
+    badge.style.border = '1px solid rgba(16, 185, 129, 0.3)';
+    riskScore.style.color = '#10B981';
+  }
+
+  classification.textContent = data.detection_type || (isTampered ? 'Likely Manipulated' : 'Authentic Camera Shot');
+
+  // Metrics
+  const metrics = data.metrics || {};
+  if (metrics.ela) metricEla.textContent = `${metrics.ela.tile_disparity_ratio}x`;
+  if (metrics.fft) metricFft.textContent = metrics.fft.azimuthal_variance;
+  if (metrics.laplacian) metricEdge.textContent = `${metrics.laplacian.edge_disparity}x`;
+  if (metrics.noise) metricNoise.textContent = `${metrics.noise.noise_disparity}x`;
+
+  // Indicators
+  indicatorsList.innerHTML = '';
+  const indicators = data.indicators || [];
+  indicators.forEach(ind => {
+    const item = document.createElement('div');
+    item.className = `image-indicator-item ${isTampered ? 'tampered' : 'authentic'}`;
+    item.innerHTML = `<span>${isTampered ? '⚠️' : '✓'}</span> <span>${escapeHTML(ind)}</span>`;
+    indicatorsList.appendChild(item);
+  });
+
+  // Heatmap
+  if (data.heatmap_b64 && heatmapImg) {
+    heatmapImg.src = data.heatmap_b64;
+  }
+}
+
+async function getActiveBackendUrl() {
+  const stored = await chrome.storage.local.get([STORAGE_BACKEND_KEY]);
+  if (stored && stored[STORAGE_BACKEND_KEY] && stored[STORAGE_BACKEND_KEY].url) {
+    return stored[STORAGE_BACKEND_KEY].url;
+  }
+  return DEFAULT_LOCAL;
 }

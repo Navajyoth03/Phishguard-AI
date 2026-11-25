@@ -86,14 +86,79 @@ async function resolveActiveBackend(forceMode = null) {
 }
 
 // ── STARTUP ───────────────────────────────────────────────────
+function setupContextMenu() {
+  chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({
+      id: 'phishguard-inspect-image',
+      title: 'Inspect Image Forensics (PhishGuard)',
+      contexts: ['image']
+    });
+  });
+}
+
 chrome.runtime.onInstalled.addListener(async () => {
   console.log('[PhishGuard] Extension installed in Dual-Mode.');
+  setupContextMenu();
   const backend = await resolveActiveBackend();
   console.log(`[PhishGuard] Initial backend: ${backend.active} (${backend.url}) [${backend.online ? 'ONLINE' : 'OFFLINE'}]`);
 });
 
 chrome.runtime.onStartup.addListener(async () => {
+  setupContextMenu();
   await resolveActiveBackend();
+});
+
+// ── CONTEXT MENU IMAGE FORENSICS ───────────────────────────────
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  if (info.menuItemId === 'phishguard-inspect-image') {
+    const imgUrl = info.srcUrl;
+    if (!imgUrl) return;
+
+    try {
+      const backend = await resolveActiveBackend();
+      const res = await fetch(`${backend.url}/analyze_image_file`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image_url: imgUrl })
+      });
+
+      if (!res.ok) {
+        throw new Error(`Server returned HTTP ${res.status}`);
+      }
+
+      const data = await res.json();
+      await chrome.storage.local.set({ 'phishguard_last_image_result': data });
+
+      const pct = Math.round((data.risk_score || 0) * 100);
+      const isTampered = data.is_tampered;
+      const title = isTampered ? `⚠️ ${pct}% Tampered / AI Detected` : `✅ ${100 - pct}% Authentic Image`;
+      const message = isTampered
+        ? (data.indicators && data.indicators[0] ? data.indicators[0] : 'Manipulated image elements detected.')
+        : 'Uniform optical sensor noise and authentic compression verified.';
+
+      try {
+        chrome.notifications.create({
+          type: 'basic',
+          iconUrl: 'icons/icon48.png',
+          title: title,
+          message: message
+        });
+      } catch (e) {
+        console.log('[PhishGuard] Notification skipped:', e);
+      }
+
+      // Update badge on active tab
+      if (tab && tab.id) {
+        chrome.action.setBadgeText({ tabId: tab.id, text: `${pct}%` });
+        chrome.action.setBadgeBackgroundColor({
+          tabId: tab.id,
+          color: isTampered ? '#EF4444' : '#10B981'
+        });
+      }
+    } catch (err) {
+      console.error('[PhishGuard] Context menu image analysis failed:', err);
+    }
+  }
 });
 
 // ── TAB ANALYSIS ──────────────────────────────────────────────

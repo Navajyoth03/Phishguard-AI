@@ -29,6 +29,9 @@ from flask import Flask, request, jsonify
 import google.generativeai as genai
 from flask_cors import CORS
 from phishfusion import FusionEngine
+import base64, io, requests
+from PIL import Image
+import image_forensics
 
 app  = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
@@ -1486,6 +1489,75 @@ def analyze():
     })
 
     return jsonify(fusion)
+
+
+@app.route('/analyze_image_file', methods=['POST', 'OPTIONS'])
+def analyze_image_file():
+    """
+    Forensic image inspection endpoint.
+    Accepts:
+      - Multipart file upload: 'image' or 'file'
+      - JSON body: { "image": "data:image/...;base64,...", "filename": "test.png" }
+      - JSON body: { "image_url": "https://..." } (e.g. from context menu)
+    Returns:
+      Forensic metrics, ELA heatmap, anomaly indicators, tampering risk score.
+    """
+    if request.method == 'OPTIONS':
+        return '', 204
+
+    t0 = time.time()
+    img = None
+    filename = "uploaded_image.png"
+
+    try:
+        # 1. Multipart Form Upload
+        if 'image' in request.files or 'file' in request.files:
+            file_obj = request.files.get('image') or request.files.get('file')
+            if file_obj and file_obj.filename:
+                filename = file_obj.filename
+                img = Image.open(file_obj.stream)
+
+        # 2. JSON Payload
+        elif request.is_json or request.data:
+            data = request.get_json(silent=True) or {}
+            
+            # Base64 string
+            b64_str = data.get('image') or data.get('image_base64') or data.get('file')
+            if b64_str:
+                filename = data.get('filename', 'uploaded_image.png')
+                if ',' in b64_str:
+                    b64_str = b64_str.split(',', 1)[1]
+                raw_bytes = base64.b64decode(b64_str)
+                img = Image.open(io.BytesIO(raw_bytes))
+
+            # Image URL
+            elif data.get('image_url') or data.get('url'):
+                target_url = data.get('image_url') or data.get('url')
+                filename = os.path.basename(urlparse(target_url).path) or "web_image.jpg"
+                if target_url.startswith('data:image'):
+                    b64_str = target_url.split(',', 1)[1]
+                    raw_bytes = base64.b64decode(b64_str)
+                    img = Image.open(io.BytesIO(raw_bytes))
+                else:
+                    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) PhishGuard-Forensics/3.0'}
+                    resp = requests.get(target_url, headers=headers, timeout=12)
+                    if resp.status_code == 200:
+                        img = Image.open(io.BytesIO(resp.content))
+                    else:
+                        return jsonify({"error": f"Failed to download image (HTTP {resp.status_code})", "success": False}), 400
+
+        if img is None:
+            return jsonify({"error": "No image file, base64 payload, or image URL provided.", "success": False}), 400
+
+        res = image_forensics.analyze_image_forensics(img, filename=filename)
+        res['latency_ms'] = round((time.time() - t0) * 1000, 1)
+        res['success'] = True
+        return jsonify(res)
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": f"Forensic analysis failed: {str(e)}", "success": False}), 500
 
 
 @app.route('/history', methods=['GET'])

@@ -1,0 +1,27 @@
+{
+  "accuracy": 1.0,
+  "precision": 1.0,
+  "recall": 1.0,
+  "f1": 1.0,
+  "auc": 1.0,
+  "mcc": 1.0,
+  "train_size": 4000,
+  "test_size": 1000,
+  "features": 11,
+  "feature_names": [
+    "ela_mean",
+    "ela_std",
+    "ela_max",
+    "ela_tile_disp",
+    "ela_subj_disp",
+    "fft_hf_ratio",
+    "fft_az_var",
+    "fft_spectral_flatness",
+    "lap_sharpness",
+    "lap_edge_disp",
+    "noise_disp"
+  ],
+  "data_source": "forensics_dataset.csv (CASIA 2.0 + CIFAKE benchmark)",
+  "cv_f1_mean": 1.0,
+  "cv_f1_std": 0.0
+}
