@@ -88,10 +88,13 @@ async function resolveActiveBackend(forceMode = null) {
 // ── STARTUP ───────────────────────────────────────────────────
 function setupContextMenu() {
   chrome.contextMenus.removeAll(() => {
+    if (chrome.runtime.lastError) {} // suppress cleanup errors
     chrome.contextMenus.create({
       id: 'phishguard-inspect-image',
       title: 'Inspect Image Forensics (PhishGuard)',
       contexts: ['image']
+    }, () => {
+      if (chrome.runtime.lastError) {} // suppress duplicate id warnings
     });
   });
 }
@@ -116,12 +119,10 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
     // 1. Notify content script to display the loading HUD directly on the page
     if (tab && tab.id) {
-      try {
-        chrome.tabs.sendMessage(tab.id, {
-          action: 'showImageForensicsToast',
-          status: 'loading'
-        });
-      } catch (e) {}
+      chrome.tabs.sendMessage(tab.id, {
+        action: 'showImageForensicsToast',
+        status: 'loading'
+      }).catch(() => {});
     }
 
     try {
@@ -151,13 +152,11 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
       // 2. Send completed forensic results to the on-page HUD
       if (tab && tab.id) {
-        try {
-          chrome.tabs.sendMessage(tab.id, {
-            action: 'showImageForensicsToast',
-            status: 'done',
-            data: data
-          });
-        } catch (e) {}
+        chrome.tabs.sendMessage(tab.id, {
+          action: 'showImageForensicsToast',
+          status: 'done',
+          data: data
+        }).catch(() => {});
 
         // Update badge on active tab
         chrome.action.setBadgeText({ tabId: tab.id, text: `${pct}%` });
@@ -168,24 +167,24 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       }
 
       try {
-        chrome.notifications.create({
+        chrome.notifications.create('pg-notify-' + Date.now(), {
           type: 'basic',
-          iconUrl: 'icons/icon48.png',
+          iconUrl: chrome.runtime.getURL('icons/icon48.png'),
           title: title,
           message: message
+        }, () => {
+          if (chrome.runtime.lastError) {}
         });
       } catch (e) {}
 
     } catch (err) {
       console.error('[PhishGuard] Context menu image analysis failed:', err);
       if (tab && tab.id) {
-        try {
-          chrome.tabs.sendMessage(tab.id, {
-            action: 'showImageForensicsToast',
-            status: 'error',
-            message: `Could not analyze image (${err.message}). Check server status in extension popup.`
-          });
-        } catch (e) {}
+        chrome.tabs.sendMessage(tab.id, {
+          action: 'showImageForensicsToast',
+          status: 'error',
+          message: `Could not analyze image (${err.message}). Check server status in extension popup.`
+        }).catch(() => {});
       }
     }
   }

@@ -20,7 +20,7 @@
         viewport_width: window.innerWidth,
         viewport_height: window.innerHeight
       }
-    });
+    }).catch(() => {});
   }
 
   function startMonitoring(videoEl) {
